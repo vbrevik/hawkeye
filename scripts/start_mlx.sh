@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Eagle3 MLX Inference Sidecar
+# Hawkeye MLX Inference Sidecar
 # Usage: ./scripts/start_mlx.sh [MODEL]
 #
 # Starts mlx-lm serve with GPT-OSS 20B (4-bit) on port 7701.
@@ -13,7 +13,7 @@ set -euo pipefail
 MODEL="${1:-mlx-community/gpt-oss-20b-mlx-q8}"
 PORT="${MLX_PORT:-7701}"
 
-echo "=== Eagle3 MLX Sidecar ==="
+echo "=== Hawkeye MLX Sidecar ==="
 echo "Model : $MODEL"
 echo "Port  : $PORT"
 echo ""

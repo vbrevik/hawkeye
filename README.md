@@ -1,4 +1,4 @@
-# Eagle3
+# Hawkeye
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files, get TL;DR summaries and structured metadata, then search across everything.
 
@@ -36,7 +36,7 @@ Re-runs skip files whose content hasn't changed (SHA-256 comparison).
 
 ## Quick Start
 
-**1. Build eagle3**
+**1. Build hawkeye**
 
 ```bash
 cargo build --release
@@ -58,7 +58,7 @@ INFO:     Started server process
 INFO:     Uvicorn running on http://0.0.0.0:8100
 ```
 
-**3. Start the eagle3 server**
+**3. Start the hawkeye server**
 
 ```bash
 # Default: port 3000, 4 workers
@@ -177,4 +177,4 @@ cargo clippy -- -D warnings
 | `--port` | 3000 | Server port |
 | `--mlx-url` | http://localhost:8100 | MLX sidecar URL |
 | `--workers` | 4 | Concurrent summarization workers |
-| `--index-path` | .eagle3_index | Tantivy index directory |
+| `--index-path` | .hawkeye_index | Tantivy index directory |

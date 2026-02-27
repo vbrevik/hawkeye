@@ -20,7 +20,7 @@ from pathlib import Path
 OUTPUT_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("test_data")
 TARGET_COUNT = 1000
 CONCURRENCY = 20  # parallel requests
-USER_AGENT = "eagle3-test-data/1.0 (https://github.com/local/eagle3; test data generation)"
+USER_AGENT = "hawkeye-test-data/1.0 (https://github.com/local/hawkeye; test data generation)"
 
 
 def slugify(title: str) -> str:
