@@ -42,6 +42,7 @@ async fn main() {
         .route("/mlx-status", get(api::status::handle_mlx_status))
         .route("/search", get(api::search::handle_search))
         .route("/summary/{file}", get(api::summary::handle_summary))
+        .route("/browse", get(api::browse::handle_browse))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", config.port);

@@ -1,3 +1,4 @@
+pub mod browse;
 pub mod ingest;
 pub mod search;
 pub mod status;
