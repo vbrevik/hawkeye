@@ -11,6 +11,10 @@ pub struct AppConfig {
     #[arg(long, default_value = "http://localhost:7701")]
     pub mlx_url: String,
 
+    /// MLX model name to use for inference
+    #[arg(long, default_value = "mlx-community/Qwen2.5-7B-Instruct-4bit")]
+    pub mlx_model: String,
+
     /// Number of concurrent workers
     #[arg(long, default_value = "4")]
     pub workers: usize,

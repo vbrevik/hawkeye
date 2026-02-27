@@ -29,7 +29,7 @@ async fn main() {
         .expect("Failed to create search index");
 
     let state = Arc::new(AppState {
-        inference: Arc::new(InferenceClient::new(&config.mlx_url)),
+        inference: Arc::new(InferenceClient::new(&config.mlx_url, &config.mlx_model)),
         queue: QueueManager::new(config.workers),
         indexer: Arc::new(Mutex::new(indexer)),
         config: config.clone(),

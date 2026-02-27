@@ -61,10 +61,11 @@ struct LlmOutput {
 pub struct InferenceClient {
     client: Client,
     base_url: String,
+    model: String,
 }
 
 impl InferenceClient {
-    pub fn new(base_url: &str) -> Self {
+    pub fn new(base_url: &str, model: &str) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(120))
             .build()
@@ -73,6 +74,7 @@ impl InferenceClient {
         Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
+            model: model.to_string(),
         }
     }
 
@@ -85,7 +87,7 @@ impl InferenceClient {
         let word_count = content.split_whitespace().count() as u64;
 
         let request = ChatRequest {
-            model: "default".to_string(),
+            model: self.model.clone(),
             messages: vec![
                 Message {
                     role: "system".to_string(),
@@ -158,7 +160,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = InferenceClient::new(&format!("http://{}", addr));
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
         let result = client
             .summarize("notes.md", "Meeting about OAuth2 migration", "sha256:abc")
             .await;

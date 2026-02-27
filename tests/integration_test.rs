@@ -51,10 +51,11 @@ async fn test_full_pipeline() {
         config: AppConfig {
             port: 0,
             mlx_url: mlx_url.clone(),
+            mlx_model: "mock-model".to_string(),
             workers: 2,
             index_path: index_dir.path().display().to_string(),
         },
-        inference: Arc::new(InferenceClient::new(&mlx_url)),
+        inference: Arc::new(InferenceClient::new(&mlx_url, "mock-model")),
         queue: QueueManager::new(2),
         indexer: Arc::new(Mutex::new(indexer)),
     });
@@ -118,7 +119,7 @@ async fn test_skip_logic_on_rerun() {
     // First run — process all 3
     let indexer = SearchIndexer::new_in_dir(index_dir.path()).unwrap();
     let queue = QueueManager::new(2);
-    let inference = Arc::new(InferenceClient::new(&mlx_url));
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
     let indexer = Arc::new(Mutex::new(indexer));
 
     let scan1 = scan_directory(dir.path()).unwrap();
