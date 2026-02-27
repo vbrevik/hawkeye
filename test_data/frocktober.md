@@ -1,0 +1,5 @@
+# Frocktober
+Frocktober is a portmanteau of the words "frock" and "October" and associated with the annual New Zealand festival of Frocktoberfest, itself a pun on the German festival Oktoberfest. The event has its origins as a frock costume party, but the association of it with the month of October meant that it soon gained temporal and annual significance. Properly, Frocktoberfest is not a festival but a party, and while the month is known as Frocktober, it is informally celebrated on only one of its nights. Participants, male and female alike, dress up in frocks - women's dresses, frequently of the outdated and unfashionable variety. In recent years the celebration has spread to Australia, the USA, England, Thailand, and Greece, each with its own characteristic interpretation of proceedings. In Australia, Frocktober is officially associated with the Ovarian Cancer Research Foundation.
+
+---
+Source: https://en.wikipedia.org/wiki/Frocktober
