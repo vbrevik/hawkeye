@@ -1,0 +1,11 @@
+/Users/vidarbrevik/projects/eagle3/target/debug/deps/htmlescape-1b5f5ed65ae403be.d: /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/lib.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/encode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/decode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/entities.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/io_support.rs
+
+/Users/vidarbrevik/projects/eagle3/target/debug/deps/libhtmlescape-1b5f5ed65ae403be.rlib: /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/lib.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/encode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/decode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/entities.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/io_support.rs
+
+/Users/vidarbrevik/projects/eagle3/target/debug/deps/libhtmlescape-1b5f5ed65ae403be.rmeta: /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/lib.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/encode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/decode.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/entities.rs /Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/io_support.rs
+
+/Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/lib.rs:
+/Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/encode.rs:
+/Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/decode.rs:
+/Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/entities.rs:
+/Users/vidarbrevik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/htmlescape-0.3.1/src/io_support.rs:
