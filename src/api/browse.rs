@@ -49,8 +49,10 @@ pub async fn handle_browse(
     State(_state): State<Arc<AppState>>,
     Query(q): Query<BrowseQuery>,
 ) -> Result<Json<BrowseResponse>, (StatusCode, String)> {
-    let default_home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
-    let path_str = q.path.unwrap_or(default_home);
+    let default_path = std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/".to_string());
+    let path_str = q.path.unwrap_or(default_path);
     let dir = PathBuf::from(&path_str);
 
     if !dir.exists() {
