@@ -4,11 +4,11 @@ use clap::Parser;
 #[command(name = "eagle3", about = "Local AI-powered markdown summarizer")]
 pub struct AppConfig {
     /// Port for the Axum server
-    #[arg(long, default_value = "3000")]
+    #[arg(long, default_value = "7700")]
     pub port: u16,
 
     /// MLX inference server URL
-    #[arg(long, default_value = "http://localhost:8100")]
+    #[arg(long, default_value = "http://localhost:7701")]
     pub mlx_url: String,
 
     /// Number of concurrent workers

@@ -4,14 +4,14 @@ set -euo pipefail
 # Eagle3 MLX Inference Sidecar
 # Usage: ./scripts/start_mlx.sh [MODEL]
 #
-# Starts mlx-lm serve with GPT-OSS 20B (4-bit) on port 8100.
+# Starts mlx-lm serve with GPT-OSS 20B (4-bit) on port 7701.
 # Default: mlx-community/gpt-oss-20b-mlx-q8 (better quality, needs ~22GB RAM)
 # Fast:    InferenceIllusionist/gpt-oss-20b-MLX-4bit (~11GB RAM)
 #
-# Set MLX_PORT env var to override port (default 8100).
+# Set MLX_PORT env var to override port (default 7701).
 
 MODEL="${1:-mlx-community/gpt-oss-20b-mlx-q8}"
-PORT="${MLX_PORT:-8100}"
+PORT="${MLX_PORT:-7701}"
 
 echo "=== Eagle3 MLX Sidecar ==="
 echo "Model : $MODEL"

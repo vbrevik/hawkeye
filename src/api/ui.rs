@@ -4,276 +4,602 @@ pub async fn handle_ui() -> Html<&'static str> {
     Html(HTML)
 }
 
-const HTML: &str = r#"<!DOCTYPE html>
+const HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eagle3 — AI Summarizer</title>
+  <title>Eagle3</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117; color: #e2e8f0; min-height: 100vh;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #27272a;
+      --border: #3f3f46;
+      --text: #fafafa;
+      --text-2: #a1a1aa;
+      --text-3: #52525b;
+      --accent: #6366f1;
+      --accent-dim: rgba(99,102,241,0.12);
+      --accent-hover: #818cf8;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", "Fira Code", monospace;
+      --r: 8px;
+      --sidebar-w: 220px;
+      --drawer-w: 340px;
     }
-    header {
-      background: #1a1d27; border-bottom: 1px solid #2d3148;
-      padding: 16px 24px; display: flex; align-items: center; gap: 16px;
+
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .layout { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+
+    .sidebar {
+      background: var(--surface); border-right: 1px solid var(--border);
+      padding: 20px 16px; display: flex; flex-direction: column; gap: 24px;
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
     }
-    header h1 { font-size: 18px; font-weight: 600; color: #fff; }
-    header span { color: #6c7aad; font-size: 13px; }
-    .status-bar {
-      background: #1a1d27; border-bottom: 1px solid #2d3148;
-      padding: 10px 24px; display: flex; gap: 24px; align-items: center;
-      font-size: 13px;
+
+    .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; color: var(--text); }
+    .logo span { color: var(--accent); }
+
+    .section-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 8px;
     }
-    .status-item { display: flex; align-items: center; gap: 6px; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; }
-    .dot.warn { background: #facc15; }
-    .dot.idle { background: #6c7aad; }
-    .stat-value { font-weight: 600; color: #fff; }
-    .stat-label { color: #6c7aad; }
-    main { max-width: 860px; margin: 0 auto; padding: 32px 24px; }
-    .section { margin-bottom: 40px; }
-    h2 {
-      font-size: 14px; font-weight: 600; color: #6c7aad;
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px;
+
+    .mlx-block { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 12px; }
+    .mlx-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-3); }
+    .dot.online { background: var(--green); animation: pulse 2.5s infinite; }
+    .dot.warn { background: var(--yellow); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .mlx-label { font-size: 12px; font-weight: 600; color: var(--text); }
+    .mlx-model { font-size: 10px; color: var(--text-3); font-family: var(--mono); line-height: 1.4; word-break: break-all; }
+
+    .ingest-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--r); color: var(--text); padding: 7px 10px;
+      font-size: 12px; font-family: var(--mono); outline: none;
+      transition: border-color 0.15s; margin-bottom: 6px;
     }
-    .row { display: flex; gap: 8px; }
-    input[type="text"] {
-      flex: 1; background: #1a1d27; border: 1px solid #2d3148;
-      border-radius: 8px; color: #e2e8f0; padding: 10px 14px;
-      font-size: 14px; outline: none; transition: border-color 0.15s;
+    .ingest-input:focus { border-color: var(--accent); }
+    .ingest-input::placeholder { color: var(--text-3); }
+
+    .btn {
+      width: 100%; background: var(--accent); border: none; border-radius: var(--r);
+      color: #fff; font-size: 12px; font-weight: 600; padding: 7px;
+      cursor: pointer; transition: background 0.15s, opacity 0.15s;
     }
-    input[type="text"]:focus { border-color: #6c7aad; }
-    input[type="text"]::placeholder { color: #3d4468; }
-    button {
-      background: #4f5fd4; border: none; border-radius: 8px; color: #fff;
-      cursor: pointer; font-size: 14px; font-weight: 500; padding: 10px 20px;
-      transition: background 0.15s; white-space: nowrap;
+    .btn:hover { background: var(--accent-hover); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .progress-bar { background: var(--surface-2); border-radius: 4px; height: 4px; overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 4px; transition: width 0.4s ease; }
+    .ingest-notice { font-size: 11px; color: var(--text-2); margin-top: 6px; line-height: 1.4; }
+
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .stat-cell { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; text-align: center; }
+    .stat-cell .val { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 2px; }
+    .stat-cell .lbl { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-cell.prog .val { color: var(--accent); }
+    .stat-cell.fail .val { color: var(--red); }
+
+    .filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--accent-dim); border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 4px; color: var(--accent-hover); font-size: 11px;
+      padding: 2px 7px; cursor: pointer; transition: background 0.15s;
     }
-    button:hover { background: #6370e0; }
-    button:disabled { background: #2d3148; color: #4a5280; cursor: not-allowed; }
-    .progress-bar {
-      background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px;
-      overflow: hidden; height: 8px; margin: 12px 0;
+    .chip:hover { background: rgba(99,102,241,0.22); }
+    .chip .x { color: var(--text-3); font-size: 9px; margin-left: 1px; }
+    .no-filters { font-size: 11px; color: var(--text-3); font-style: italic; }
+
+    .main { display: flex; flex-direction: column; min-height: 100vh; overflow: hidden; }
+
+    .search-bar-wrap {
+      padding: 20px 28px 16px; position: sticky; top: 0;
+      background: var(--bg); z-index: 10; border-bottom: 1px solid var(--border);
     }
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #4f5fd4, #818cf8);
-      transition: width 0.3s ease;
+    .search-bar {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .progress-info { font-size: 13px; color: #6c7aad; margin-top: 6px; }
-    .results { display: flex; flex-direction: column; gap: 12px; }
-    .result-card {
-      background: #1a1d27; border: 1px solid #2d3148;
-      border-radius: 10px; padding: 16px; transition: border-color 0.15s;
+    .search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .search-icon { color: var(--text-3); font-size: 15px; flex-shrink: 0; }
+    .search-input { flex: 1; background: none; border: none; color: var(--text); font-size: 15px; outline: none; }
+    .search-input::placeholder { color: var(--text-3); }
+    .search-kbd {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text-3); font-size: 10px;
+      font-family: var(--mono); padding: 2px 6px; flex-shrink: 0;
     }
-    .result-card:hover { border-color: #4f5fd4; }
-    .result-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px; }
-    .result-file { font-size: 12px; color: #4a5280; font-family: monospace; margin-bottom: 8px; }
-    .result-tldr { font-size: 14px; color: #a0aec0; line-height: 1.5; }
-    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .tag { background: #2d3148; border-radius: 4px; color: #818cf8; font-size: 12px; padding: 2px 8px; }
-    .score { font-size: 12px; color: #4a5280; margin-top: 8px; }
-    .notice {
-      background: #1e2035; border: 1px solid #2d3148; border-radius: 8px;
-      color: #818cf8; font-size: 13px; padding: 10px 14px; margin-top: 8px;
+
+    .results-area { padding: 20px 28px; flex: 1; }
+    .results-count { font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+    .results-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .empty { color: #4a5280; font-size: 14px; padding: 24px 0; text-align: center; }
+    .card:hover { border-color: rgba(99,102,241,0.5); background: rgba(99,102,241,0.03); }
+    .card.active { border-color: var(--accent); background: var(--accent-dim); }
+
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .card-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
+    .card-score { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-dim); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; }
+    .card-file { font-size: 11px; font-family: var(--mono); color: var(--text-3); margin-bottom: 6px; }
+    .card-tldr { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .tag { background: var(--surface-2); border-radius: 4px; color: var(--text-3); font-size: 11px; padding: 2px 7px; cursor: pointer; transition: color 0.15s, background 0.15s; }
+    .tag:hover { background: var(--accent-dim); color: var(--accent-hover); }
+
+    .placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; gap: 12px; color: var(--text-3); }
+    .placeholder p { font-size: 14px; }
+
+    .skeleton { border-radius: var(--r); background: var(--surface); animation: shimmer 1.4s infinite; }
+    @keyframes shimmer { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.9; } }
+    .sk-card { height: 90px; border-radius: 10px; margin-bottom: 8px; }
+
+    .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 40; }
+    .drawer-overlay.open { opacity: 1; pointer-events: all; }
+
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-w);
+      background: var(--surface); border-left: 1px solid var(--border);
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 50; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .drawer.open { transform: translateX(0); }
+
+    .drawer-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .drawer-title { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
+    .drawer-close { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); font-size: 13px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background 0.15s; }
+    .drawer-close:hover { background: var(--border); }
+
+    .drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 20px; }
+    .drawer-slabel { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 6px; }
+    .drawer-text { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+    .drawer-file { font-size: 11px; font-family: var(--mono); color: var(--text-3); word-break: break-all; }
+    .drawer-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .drawer-chip { background: var(--surface-2); border-radius: 4px; color: var(--text-2); font-size: 12px; padding: 3px 8px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .drawer-chip:hover { background: var(--accent-dim); color: var(--accent-hover); }
+    .drawer-chip.static { cursor: default; }
+    .drawer-chip.static:hover { background: var(--surface-2); color: var(--text-2); }
+
+    .drawer-meta { display: flex; gap: 16px; padding-top: 4px; border-top: 1px solid var(--border); }
+    .drawer-meta-item { font-size: 12px; color: var(--text-3); }
+    .drawer-meta-item strong { color: var(--text-2); }
   </style>
 </head>
 <body>
 
-<header>
-  <h1>Eagle3</h1>
-  <span>Local AI Summarizer</span>
-</header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo">eagle<span>3</span></div>
 
-<div class="status-bar">
-  <div class="status-item">
-    <div class="dot idle" id="mlxDot"></div>
-    <span class="stat-label">MLX Sidecar</span>
-    <span class="stat-value" id="mlxStatus">Checking...</span>
-  </div>
-  <div class="status-item">
-    <span class="stat-label">Total</span>
-    <span class="stat-value" id="statTotal">0</span>
-  </div>
-  <div class="status-item">
-    <span class="stat-label">Done</span>
-    <span class="stat-value" id="statCompleted">0</span>
-  </div>
-  <div class="status-item">
-    <span class="stat-label">In Progress</span>
-    <span class="stat-value" id="statInProgress">0</span>
-  </div>
-  <div class="status-item">
-    <span class="stat-label">Failed</span>
-    <span class="stat-value" id="statFailed">0</span>
-  </div>
+    <div>
+      <div class="section-label">Inference</div>
+      <div class="mlx-block">
+        <div class="mlx-row">
+          <div class="dot" id="mlxDot"></div>
+          <span class="mlx-label" id="mlxStatus">Checkingâ¦</span>
+        </div>
+        <div class="mlx-model" id="mlxModel">â</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Ingest</div>
+      <input class="ingest-input" id="ingestPath" type="text" placeholder="/path/to/notes" />
+      <button class="btn" id="ingestBtn" onclick="startIngest()">Start Ingest</button>
+      <div id="ingestNotice" class="ingest-notice" style="display:none"></div>
+      <div id="progressWrap" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        <div class="ingest-notice" id="progressInfo"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Queue</div>
+      <div class="stats-grid">
+        <div class="stat-cell"><div class="val" id="statTotal">0</div><div class="lbl">Total</div></div>
+        <div class="stat-cell"><div class="val" id="statCompleted">0</div><div class="lbl">Done</div></div>
+        <div class="stat-cell prog"><div class="val" id="statInProgress">0</div><div class="lbl">Active</div></div>
+        <div class="stat-cell fail"><div class="val" id="statFailed">0</div><div class="lbl">Failed</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Active Filters</div>
+      <div class="filter-chips" id="filterChips">
+        <span class="no-filters">No filters active</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="search-bar-wrap">
+      <div class="search-bar">
+        <span class="search-icon">â</span>
+        <input class="search-input" id="searchInput" placeholder="Search summariesâ¦" autocomplete="off" spellcheck="false" />
+        <span class="search-kbd">âK</span>
+      </div>
+    </div>
+    <div class="results-area">
+      <div id="resultsContainer">
+        <div class="placeholder">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+          <p>Search your indexed summaries</p>
+        </div>
+      </div>
+    </div>
+  </main>
 </div>
 
-<main>
-  <div class="section">
-    <h2>Ingest Directory</h2>
-    <div class="row">
-      <input type="text" id="ingestPath" placeholder="/path/to/your/markdown/files" />
-      <button id="ingestBtn" onclick="startIngest()">Start Ingest</button>
-    </div>
-    <div id="ingestNotice" style="display:none" class="notice"></div>
-    <div id="progressContainer" style="display:none">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill" style="width:0%"></div>
-      </div>
-      <p class="progress-info" id="progressInfo"></p>
-    </div>
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawerTitle">â</div>
+    <button class="drawer-close" onclick="closeDrawer()">â</button>
   </div>
-
-  <div class="section">
-    <h2>Search Summaries</h2>
-    <div class="row">
-      <input type="text" id="searchQuery"
-             placeholder="kubernetes auth migration..."
-             onkeydown="if(event.key==='Enter') doSearch()" />
-      <button onclick="doSearch()">Search</button>
-    </div>
-  </div>
-
-  <div id="results" class="results"></div>
-</main>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
 
 <script>
-  function setText(id, text) {
-    document.getElementById(id).textContent = text;
-  }
+  // All server data is set via textContent or built with DOM APIs - no innerHTML with server data.
+  let activeFilters = new Set();
+  let activeCardFile = null;
+  let searchTimer = null;
 
-  async function pollStatus() {
+  function setText(id, t) { document.getElementById(id).textContent = t; }
+  function show(id) { document.getElementById(id).style.display = ""; }
+
+  const searchInput = document.getElementById("searchInput");
+  searchInput.focus();
+
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(doSearch, 300);
+  });
+
+  searchInput.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      if (searchInput.value) { searchInput.value = ""; doSearch(); }
+      else closeDrawer();
+    }
+  });
+
+  document.addEventListener("keydown", e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault(); searchInput.focus(); searchInput.select();
+    }
+    if (e.key === "Escape") closeDrawer();
+  });
+
+  async function doSearch() {
+    const raw = searchInput.value.trim();
+    const tagQ = [...activeFilters].join(" ");
+    const q = [raw, tagQ].filter(Boolean).join(" ");
+
+    if (!q) { showEmpty(); return; }
+
+    const container = document.getElementById("resultsContainer");
+    container.replaceChildren();
+    for (let i = 0; i < 5; i++) {
+      const sk = document.createElement("div");
+      sk.className = "skeleton sk-card";
+      container.appendChild(sk);
+    }
+
     try {
-      const res = await fetch('/status');
-      const d = await res.json();
-      setText('statTotal', d.total);
-      setText('statCompleted', d.completed);
-      setText('statInProgress', d.in_progress);
-      setText('statFailed', d.failed);
-
-      if (d.total > 0) {
-        const pct = Math.round((d.completed + d.failed) / d.total * 100);
-        document.getElementById('progressContainer').style.display = 'block';
-        document.getElementById('progressFill').style.width = pct + '%';
-        setText('progressInfo', `${d.completed + d.failed} / ${d.total} files (${pct}%)`);
-      }
-    } catch (_) {}
-
-    try {
-      await fetch('http://localhost:8100/health',
-        { signal: AbortSignal.timeout(1000) });
-      document.getElementById('mlxDot').className = 'dot';
-      setText('mlxStatus', 'Online');
-    } catch (_) {
-      document.getElementById('mlxDot').className = 'dot warn';
-      setText('mlxStatus', 'Offline');
+      const res = await fetch("/search?q=" + encodeURIComponent(q) + "&limit=25");
+      const data = await res.json();
+      renderResults(data, raw);
+    } catch (e) {
+      showEmpty("Error: " + e.message);
     }
   }
 
-  async function startIngest() {
-    const path = document.getElementById('ingestPath').value.trim();
-    if (!path) return;
-    const btn = document.getElementById('ingestBtn');
-    btn.disabled = true;
-    btn.textContent = 'Starting...';
-    const notice = document.getElementById('ingestNotice');
-    notice.style.display = 'block';
+  function showEmpty(msg) {
+    const container = document.getElementById("resultsContainer");
+    const wrap = document.createElement("div");
+    wrap.className = "placeholder";
+    if (!msg) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "40"); svg.setAttribute("height", "40");
+      svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.5");
+      svg.setAttribute("opacity", "0.3");
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", "11"); circle.setAttribute("cy", "11"); circle.setAttribute("r", "8");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "m21 21-4.35-4.35");
+      svg.append(circle, path);
+      wrap.appendChild(svg);
+    }
+    const p = document.createElement("p");
+    p.textContent = msg || "Search your indexed summaries";
+    wrap.appendChild(p);
+    container.replaceChildren(wrap);
+  }
+
+  function renderResults(data, query) {
+    const container = document.getElementById("resultsContainer");
+    if (!data.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "placeholder";
+      const p = document.createElement("p");
+      p.textContent = "No results for \u201c" + query + "\u201d";
+      wrap.appendChild(p);
+      container.replaceChildren(wrap);
+      return;
+    }
+
+    const count = document.createElement("div");
+    count.className = "results-count";
+    count.textContent = data.length + " result" + (data.length !== 1 ? "s" : "");
+
+    const list = document.createElement("div");
+    list.className = "results-list";
+    for (const r of data) list.appendChild(makeCard(r));
+
+    container.replaceChildren(count, list);
+  }
+
+  function makeCard(r) {
+    const card = document.createElement("div");
+    card.className = "card" + (r.file === activeCardFile ? " active" : "");
+    card.dataset.file = r.file;
+    card.addEventListener("click", () => openDrawer(r));
+
+    const header = document.createElement("div");
+    header.className = "card-header";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = r.title || r.file;
+
+    const score = document.createElement("div");
+    score.className = "card-score";
+    score.textContent = r.score.toFixed(2);
+    header.append(title, score);
+
+    const file = document.createElement("div");
+    file.className = "card-file";
+    file.textContent = r.file;
+
+    const tldr = document.createElement("div");
+    tldr.className = "card-tldr";
+    tldr.textContent = r.tldr;
+
+    const tags = document.createElement("div");
+    tags.className = "card-tags";
+    (r.tags || "").split(" ").filter(Boolean).forEach(t => {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "#" + t;
+      tag.addEventListener("click", e => { e.stopPropagation(); addFilter(t); });
+      tags.appendChild(tag);
+    });
+
+    card.append(header, file, tldr, tags);
+    return card;
+  }
+
+  function addFilter(tag) {
+    if (activeFilters.has(tag)) return;
+    activeFilters.add(tag); renderFilters(); doSearch();
+  }
+
+  function removeFilter(tag) {
+    activeFilters.delete(tag); renderFilters(); doSearch();
+  }
+
+  function renderFilters() {
+    const el = document.getElementById("filterChips");
+    el.replaceChildren();
+    if (!activeFilters.size) {
+      const s = document.createElement("span");
+      s.className = "no-filters";
+      s.textContent = "No filters active";
+      el.appendChild(s);
+      return;
+    }
+    for (const t of activeFilters) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = "#" + t;
+      const x = document.createElement("span");
+      x.className = "x";
+      x.textContent = "\u2715";
+      chip.appendChild(x);
+      chip.addEventListener("click", () => removeFilter(t));
+      el.appendChild(chip);
+    }
+  }
+
+  async function openDrawer(result) {
+    activeCardFile = result.file;
+    document.querySelectorAll(".card").forEach(c =>
+      c.classList.toggle("active", c.dataset.file === result.file)
+    );
+    setText("drawerTitle", result.title || result.file);
+
+    const body = document.getElementById("drawerBody");
+    const sk = document.createElement("div");
+    sk.className = "skeleton";
+    sk.style.cssText = "height:140px;border-radius:8px;";
+    body.replaceChildren(sk);
+
+    document.getElementById("drawer").classList.add("open");
+    document.getElementById("drawerOverlay").classList.add("open");
+
     try {
-      const res = await fetch('/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/summary/" + encodeURIComponent(result.file));
+      if (!res.ok) throw new Error("not found");
+      renderDrawer(await res.json());
+    } catch (_) {
+      renderDrawerFallback(result);
+    }
+  }
+
+  function closeDrawer() {
+    activeCardFile = null;
+    document.querySelectorAll(".card").forEach(c => c.classList.remove("active"));
+    document.getElementById("drawer").classList.remove("open");
+    document.getElementById("drawerOverlay").classList.remove("open");
+  }
+
+  function makeSection(label, contentNode) {
+    const wrap = document.createElement("div");
+    const lbl = document.createElement("div");
+    lbl.className = "drawer-slabel";
+    lbl.textContent = label;
+    wrap.append(lbl, contentNode);
+    return wrap;
+  }
+
+  function makeChips(arr, clickable) {
+    const wrap = document.createElement("div");
+    wrap.className = "drawer-chips";
+    if (!arr || !arr.length) {
+      const em = document.createElement("span");
+      em.style.cssText = "color:var(--text-3);font-size:12px;";
+      em.textContent = "\u2014";
+      wrap.appendChild(em);
+      return wrap;
+    }
+    for (const v of arr) {
+      const chip = document.createElement("span");
+      chip.className = "drawer-chip" + (clickable ? "" : " static");
+      chip.textContent = clickable ? "#" + v : v;
+      if (clickable) chip.addEventListener("click", () => addFilter(v));
+      wrap.appendChild(chip);
+    }
+    return wrap;
+  }
+
+  function renderDrawer(s) {
+    setText("drawerTitle", s.title || s.source);
+
+    const fileEl = document.createElement("div");
+    fileEl.className = "drawer-file";
+    fileEl.textContent = s.source;
+
+    const tldrEl = document.createElement("div");
+    tldrEl.className = "drawer-text";
+    tldrEl.textContent = s.tldr;
+
+    const meta = document.createElement("div");
+    meta.className = "drawer-meta";
+    const wEl = document.createElement("div");
+    wEl.className = "drawer-meta-item";
+    const wStrong = document.createElement("strong");
+    wStrong.textContent = (s.word_count || 0).toLocaleString();
+    wEl.append(wStrong, " words");
+    const dEl = document.createElement("div");
+    dEl.className = "drawer-meta-item";
+    dEl.textContent = "Indexed " + (s.created_at ? new Date(s.created_at).toLocaleDateString() : "\u2014");
+    meta.append(wEl, dEl);
+
+    document.getElementById("drawerBody").replaceChildren(
+      makeSection("File", fileEl),
+      makeSection("TL;DR", tldrEl),
+      makeSection("Tags", makeChips(s.tags, true)),
+      makeSection("Entities", makeChips(s.entities, false)),
+      makeSection("Topics", makeChips(s.topics, false)),
+      meta
+    );
+  }
+
+  function renderDrawerFallback(r) {
+    const fileEl = document.createElement("div");
+    fileEl.className = "drawer-file";
+    fileEl.textContent = r.file;
+
+    const tldrEl = document.createElement("div");
+    tldrEl.className = "drawer-text";
+    tldrEl.textContent = r.tldr;
+
+    const tags = (r.tags || "").split(" ").filter(Boolean);
+    const nodes = [makeSection("File", fileEl), makeSection("TL;DR", tldrEl)];
+    if (tags.length) nodes.push(makeSection("Tags", makeChips(tags, true)));
+    document.getElementById("drawerBody").replaceChildren(...nodes);
+  }
+
+  async function startIngest() {
+    const path = document.getElementById("ingestPath").value.trim();
+    if (!path) return;
+    const btn = document.getElementById("ingestBtn");
+    btn.disabled = true; btn.textContent = "Starting\u2026";
+
+    const notice = document.getElementById("ingestNotice");
+    notice.style.display = "block"; notice.textContent = "";
+
+    try {
+      const res = await fetch("/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       });
       const d = await res.json();
       notice.textContent = res.ok
-        ? `Started — ${d.files_queued} queued, ${d.files_skipped} skipped`
-        : `Error: ${JSON.stringify(d)}`;
+        ? d.files_queued + " queued \u00b7 " + d.files_skipped + " skipped"
+        : "Error: " + JSON.stringify(d);
+      if (res.ok) show("progressWrap");
     } catch (e) {
-      notice.textContent = 'Error: ' + e.message;
+      notice.textContent = "Error: " + e.message;
     }
-    btn.disabled = false;
-    btn.textContent = 'Start Ingest';
+
+    btn.disabled = false; btn.textContent = "Start Ingest";
   }
 
-  async function doSearch() {
-    const q = document.getElementById('searchQuery').value.trim();
-    if (!q) return;
-    const container = document.getElementById('results');
-    container.textContent = '';
-
-    const loading = document.createElement('p');
-    loading.className = 'empty';
-    loading.textContent = 'Searching...';
-    container.appendChild(loading);
+  async function pollStatus() {
+    try {
+      const d = await fetch("/status").then(r => r.json());
+      setText("statTotal", d.total);
+      setText("statCompleted", d.completed);
+      setText("statInProgress", d.in_progress);
+      setText("statFailed", d.failed);
+      if (d.total > 0) {
+        const pct = Math.round((d.completed + d.failed) / d.total * 100);
+        show("progressWrap");
+        document.getElementById("progressFill").style.width = pct + "%";
+        setText("progressInfo", (d.completed + d.failed) + " / " + d.total + " (" + pct + "%)");
+      }
+    } catch (_) {}
 
     try {
-      const res = await fetch('/search?q=' + encodeURIComponent(q) + '&limit=20');
-      const data = await res.json();
-      container.textContent = '';
-
-      if (!data.length) {
-        const empty = document.createElement('p');
-        empty.className = 'empty';
-        empty.textContent = 'No results found.';
-        container.appendChild(empty);
-        return;
+      const mlx = await fetch("/mlx-status").then(r => r.json());
+      const dot = document.getElementById("mlxDot");
+      if (mlx.online) {
+        dot.className = "dot online";
+        setText("mlxStatus", "Online");
+        setText("mlxModel", mlx.model || "unknown model");
+      } else {
+        dot.className = "dot warn";
+        setText("mlxStatus", mlx.message || "Offline");
+        setText("mlxModel", "\u2014");
       }
-
-      for (const r of data) {
-        const card = document.createElement('div');
-        card.className = 'result-card';
-
-        const title = document.createElement('div');
-        title.className = 'result-title';
-        title.textContent = r.title || r.file;
-        card.appendChild(title);
-
-        const file = document.createElement('div');
-        file.className = 'result-file';
-        file.textContent = r.file;
-        card.appendChild(file);
-
-        const tldr = document.createElement('div');
-        tldr.className = 'result-tldr';
-        tldr.textContent = r.tldr;
-        card.appendChild(tldr);
-
-        if (r.tags) {
-          const tagsDiv = document.createElement('div');
-          tagsDiv.className = 'tags';
-          for (const t of r.tags.split(' ').filter(Boolean)) {
-            const tag = document.createElement('span');
-            tag.className = 'tag';
-            tag.textContent = t;
-            tagsDiv.appendChild(tag);
-          }
-          card.appendChild(tagsDiv);
-        }
-
-        const score = document.createElement('div');
-        score.className = 'score';
-        score.textContent = 'Score: ' + r.score.toFixed(3);
-        card.appendChild(score);
-
-        container.appendChild(card);
-      }
-    } catch (e) {
-      container.textContent = '';
-      const err = document.createElement('p');
-      err.className = 'empty';
-      err.textContent = 'Error: ' + e.message;
-      container.appendChild(err);
-    }
+    } catch (_) {}
   }
 
   pollStatus();
   setInterval(pollStatus, 3000);
 </script>
 </body>
-</html>"#;
+</html>"##;
