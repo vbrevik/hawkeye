@@ -186,7 +186,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 
 <div class="layout">
   <aside class="sidebar">
-    <div class="logo">eagle<span>3</span></div>
+    <div class="logo">hawk<span>eye</span></div>
 
     <div>
       <div class="section-label">Inference</div>
