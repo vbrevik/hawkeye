@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "eagle3", about = "Local AI-powered markdown summarizer")]
+#[command(name = "hawkeye", about = "Local AI-powered markdown summarizer")]
 pub struct AppConfig {
     /// Port for the Axum server
     #[arg(long, default_value = "7700")]
@@ -16,6 +16,6 @@ pub struct AppConfig {
     pub workers: usize,
 
     /// Path to Tantivy index directory
-    #[arg(long, default_value = ".eagle3_index")]
+    #[arg(long, default_value = ".hawkeye_index")]
     pub index_path: String,
 }

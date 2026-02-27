@@ -1,7 +1,11 @@
 [package]
-name = "eagle3"
+name = "hawkeye"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "hawkeye"
+path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"

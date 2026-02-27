@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter("eagle3=info")
+        .with_env_filter("hawkeye=info")
         .init();
 
     let config = AppConfig::parse();
@@ -45,7 +45,7 @@ async fn main() {
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", config.port);
-    tracing::info!("eagle3 listening on http://{}", addr);
+    tracing::info!("hawkeye listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
