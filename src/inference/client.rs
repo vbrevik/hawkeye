@@ -4,7 +4,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const SYSTEM_PROMPT: &str = r#"You are a document summarizer. Given a markdown document, extract:
+const SYSTEM_PROMPT: &str = r#"/no_think
+You are a document summarizer. Given a markdown document, extract:
 1. A 2-3 sentence TL;DR summary
 2. A short title
 3. Relevant tags (lowercase, max 5)

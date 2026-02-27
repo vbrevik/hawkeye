@@ -12,7 +12,7 @@ pub struct AppConfig {
     pub mlx_url: String,
 
     /// MLX model name to use for inference
-    #[arg(long, default_value = "mlx-community/Qwen2.5-7B-Instruct-4bit")]
+    #[arg(long, default_value = "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit")]
     pub mlx_model: String,
 
     /// Number of concurrent workers

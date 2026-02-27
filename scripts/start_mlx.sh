@@ -33,24 +33,11 @@ fi
 echo "Port  : $PORT"
 echo ""
 
-# Check Python 3
-if ! command -v python3 &>/dev/null; then
-  echo "ERROR: python3 not found. Install Python 3.10+ from https://python.org"
+# Check uv
+if ! command -v uv &>/dev/null; then
+  echo "ERROR: uv not found. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
   exit 1
 fi
-
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-echo "Python: $PYTHON_VERSION"
-
-# Check / install mlx-lm (>= 0.26.3 required for gpt_oss architecture)
-if ! python3 -c "import mlx_lm" 2>/dev/null; then
-  echo "mlx-lm not found — installing..."
-  pip3 install "mlx-lm>=0.26.3"
-fi
-
-MLX_VERSION=$(python3 -c "import mlx_lm; print(mlx_lm.__version__)" 2>/dev/null || echo "unknown")
-echo "mlx-lm: $MLX_VERSION"
-echo ""
 
 echo "Starting inference server on port $PORT..."
 echo "First run will download the model (~11-22GB). Subsequent runs use cache."
@@ -61,7 +48,7 @@ if [[ -n "$DRAFT_MODEL" ]]; then
   DRAFT_ARGS=(--draft-model "$DRAFT_MODEL" --num-draft-tokens 5)
 fi
 
-exec python3 -m mlx_lm.server \
+exec uv run --with "mlx-lm>=0.26.3" python3 -m mlx_lm.server \
   --model "$MODEL" \
   --port "$PORT" \
-  "${DRAFT_ARGS[@]}"
+  "${DRAFT_ARGS[@]+"${DRAFT_ARGS[@]}"}"
