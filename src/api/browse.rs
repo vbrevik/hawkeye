@@ -25,7 +25,6 @@ pub fn list_dir(dir: &PathBuf) -> Result<BrowseResponse, String> {
 
     let parent = path
         .parent()
-        .filter(|p| *p != path.as_path()) // root's parent == itself
         .map(|p| p.to_string_lossy().into_owned());
 
     let mut entries: Vec<String> = std::fs::read_dir(&path)
@@ -54,7 +53,14 @@ pub async fn handle_browse(
     let path_str = q.path.unwrap_or(default_home);
     let dir = PathBuf::from(&path_str);
 
-    list_dir(&dir).map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
+    if !dir.exists() {
+        return Err((StatusCode::BAD_REQUEST, format!("Path does not exist: {path_str}")));
+    }
+    if !dir.is_dir() {
+        return Err((StatusCode::BAD_REQUEST, format!("Not a directory: {path_str}")));
+    }
+
+    list_dir(&dir).map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 #[cfg(test)]
