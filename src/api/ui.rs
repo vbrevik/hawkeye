@@ -61,15 +61,6 @@ const HTML: &str = r##"<!DOCTYPE html>
     .mlx-label { font-size: 12px; font-weight: 600; color: var(--text); }
     .mlx-model { font-size: 10px; color: var(--text-3); font-family: var(--mono); line-height: 1.4; word-break: break-all; }
 
-    .ingest-input {
-      width: 100%; background: var(--bg); border: 1px solid var(--border);
-      border-radius: var(--r); color: var(--text); padding: 7px 10px;
-      font-size: 12px; font-family: var(--mono); outline: none;
-      transition: border-color 0.15s; margin-bottom: 6px;
-    }
-    .ingest-input:focus { border-color: var(--accent); }
-    .ingest-input::placeholder { color: var(--text-3); }
-
     .btn {
       width: 100%; background: var(--accent); border: none; border-radius: var(--r);
       color: #fff; font-size: 12px; font-weight: 600; padding: 7px;
@@ -180,6 +171,29 @@ const HTML: &str = r##"<!DOCTYPE html>
     .drawer-meta { display: flex; gap: 16px; padding-top: 4px; border-top: 1px solid var(--border); }
     .drawer-meta-item { font-size: 12px; color: var(--text-3); }
     .drawer-meta-item strong { color: var(--text-2); }
+
+    .browser-wrap { display: flex; flex-direction: column; gap: 6px; }
+    .browser-crumb {
+      font-size: 11px; color: var(--text-2);
+      word-break: break-all; line-height: 1.4; min-height: 14px;
+    }
+    .browser-list {
+      max-height: 180px; overflow-y: auto;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg-2);
+    }
+    .browser-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px; font-size: 12px; cursor: pointer;
+      color: var(--text-1); user-select: none;
+    }
+    .browser-row:hover { background: var(--hover); }
+    .browser-row.parent { color: var(--text-2); font-style: italic; }
+    .browser-icon { opacity: 0.6; flex-shrink: 0; }
+    .browser-empty {
+      padding: 10px 8px; font-size: 12px;
+      color: var(--text-3); text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -201,9 +215,12 @@ const HTML: &str = r##"<!DOCTYPE html>
 
     <div>
       <div class="section-label">Ingest</div>
-      <input class="ingest-input" id="ingestPath" type="text" placeholder="/path/to/notes" />
-      <button class="btn" id="ingestBtn" onclick="startIngest()">Start Ingest</button>
-      <div id="ingestNotice" class="ingest-notice" style="display:none"></div>
+      <div class="browser-wrap">
+        <div class="browser-crumb" id="browserCrumb"></div>
+        <div class="browser-list" id="browserList"></div>
+        <button class="btn" id="ingestBtn" onclick="ingestCurrent()">Ingest here</button>
+        <div id="ingestNotice" class="ingest-notice" style="display:none"></div>
+      </div>
       <div id="progressWrap" style="display:none">
         <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
         <div class="ingest-notice" id="progressInfo"></div>
@@ -541,31 +558,90 @@ const HTML: &str = r##"<!DOCTYPE html>
     document.getElementById("drawerBody").replaceChildren(...nodes);
   }
 
-  async function startIngest() {
-    const path = document.getElementById("ingestPath").value.trim();
-    if (!path) return;
+  let browserPath = null;
+
+  function makeBrowserRow(text, isParent, onClick) {
+    const row = document.createElement("div");
+    row.className = isParent ? "browser-row parent" : "browser-row";
+    const icon = document.createElement("span");
+    icon.className = "browser-icon";
+    icon.textContent = isParent ? "\u2191" : "\uD83D\uDCC1";
+    const label = document.createElement("span");
+    label.textContent = text;
+    row.appendChild(icon);
+    row.appendChild(label);
+    row.onclick = onClick;
+    return row;
+  }
+
+  function makeBrowserEmpty(text) {
+    const el = document.createElement("div");
+    el.className = "browser-empty";
+    el.textContent = text;
+    return el;
+  }
+
+  async function browseDir(path) {
+    const list = document.getElementById("browserList");
+    const crumb = document.getElementById("browserCrumb");
+    while (list.firstChild) list.removeChild(list.firstChild);
+    list.appendChild(makeBrowserEmpty("Loading\u2026"));
+    const url = path ? "/browse?path=" + encodeURIComponent(path) : "/browse";
+    let data;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.statusText);
+      data = await res.json();
+    } catch (e) {
+      while (list.firstChild) list.removeChild(list.firstChild);
+      list.appendChild(makeBrowserEmpty("Error loading directory"));
+      return;
+    }
+    browserPath = data.path;
+    const parts = data.path.split("/").filter(Boolean);
+    const short = parts.length > 2 ? "\u2026/" + parts.slice(-2).join("/") : data.path;
+    crumb.textContent = short;
+    while (list.firstChild) list.removeChild(list.firstChild);
+    if (data.parent) {
+      list.appendChild(makeBrowserRow("Parent", true, () => browseDir(data.parent)));
+    }
+    if (data.entries.length === 0) {
+      list.appendChild(makeBrowserEmpty("No subdirectories"));
+      return;
+    }
+    for (const name of data.entries) {
+      const childPath = data.path + "/" + name;
+      list.appendChild(makeBrowserRow(name, false, () => browseDir(childPath)));
+    }
+  }
+
+  async function ingestCurrent() {
+    if (!browserPath) return;
     const btn = document.getElementById("ingestBtn");
-    btn.disabled = true; btn.textContent = "Starting\u2026";
-
     const notice = document.getElementById("ingestNotice");
-    notice.style.display = "block"; notice.textContent = "";
-
+    btn.disabled = true;
+    btn.textContent = "Ingesting\u2026";
+    notice.style.display = "none";
     try {
       const res = await fetch("/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify({ path: browserPath }),
       });
-      const d = await res.json();
-      notice.textContent = res.ok
-        ? d.files_queued + " queued \u00b7 " + d.files_skipped + " skipped"
-        : "Error: " + JSON.stringify(d);
-      if (res.ok) show("progressWrap");
-    } catch (e) {
-      notice.textContent = "Error: " + e.message;
+      const data = await res.json();
+      notice.style.display = "block";
+      if (res.ok) {
+        notice.textContent = "Queued " + data.files_queued + " files, skipped " + data.files_skipped;
+      } else {
+        notice.textContent = "Error: " + (data.message || res.statusText);
+      }
+    } catch (_) {
+      notice.style.display = "block";
+      notice.textContent = "Network error";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Ingest here";
     }
-
-    btn.disabled = false; btn.textContent = "Start Ingest";
   }
 
   async function pollStatus() {
@@ -600,6 +676,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 
   pollStatus();
   setInterval(pollStatus, 3000);
+  browseDir(null);
 </script>
 </body>
 </html>"##;
