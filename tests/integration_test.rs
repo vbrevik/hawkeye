@@ -1,5 +1,5 @@
 use axum::{routing::post, Json, Router};
-use eagle3::{
+use hawkeye::{
     api::AppState,
     config::AppConfig,
     inference::client::InferenceClient,
@@ -79,7 +79,7 @@ async fn test_full_pipeline() {
     // 6. Verify .summary.json files on disk
     for i in 0..5 {
         let md_path = dir.path().join(format!("doc{}.md", i));
-        let summary_path = eagle3::summary::store::summary_path_for(&md_path);
+        let summary_path = hawkeye::summary::store::summary_path_for(&md_path);
         assert!(summary_path.exists(), "Missing summary for doc{}.md", i);
 
         let summary = read_summary(&summary_path).unwrap();
