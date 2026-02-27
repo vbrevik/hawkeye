@@ -19,6 +19,7 @@ pub struct SearchResult {
 pub struct SearchIndexer {
     index: Index,
     writer: IndexWriter,
+    #[allow(dead_code)]
     schema: Schema,
     source_path: Field,
     tldr: Field,
@@ -48,6 +49,7 @@ impl SearchIndexer {
         })
     }
 
+    #[cfg(test)]
     pub fn new_in_memory() -> Result<Self, Box<dyn std::error::Error>> {
         let (schema, fields) = Self::build_schema();
         let index = Index::create_in_ram(schema.clone());
