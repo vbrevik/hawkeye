@@ -3,6 +3,7 @@ pub mod ingest;
 pub mod search;
 pub mod status;
 pub mod summary;
+pub mod tags;
 pub mod ui;
 
 use crate::config::AppConfig;

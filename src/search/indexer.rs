@@ -1,8 +1,9 @@
 use crate::summary::store::Summary;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{AllQuery, QueryParser};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexWriter, ReloadPolicy, TantivyDocument};
 
@@ -92,6 +93,50 @@ impl SearchIndexer {
         ))?;
         self.writer.commit()?;
         Ok(())
+    }
+
+    /// Returns the top `limit` values for a given stored text field, by frequency.
+    fn top_values_for_field(
+        &self,
+        field: Field,
+        limit: usize,
+    ) -> Result<Vec<(String, usize)>, Box<dyn std::error::Error>> {
+        let reader = self
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
+            .try_into()?;
+        let searcher = reader.searcher();
+        let all_docs = searcher.search(&AllQuery, &TopDocs::with_limit(100_000))?;
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for (_, doc_address) in all_docs {
+            let doc: TantivyDocument = searcher.doc(doc_address)?;
+            if let Some(s) = doc.get_first(field).and_then(|v| v.as_str()) {
+                for token in s.split_whitespace() {
+                    if !token.is_empty() {
+                        *counts.entry(token.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        let mut sorted: Vec<(String, usize)> = counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        sorted.truncate(limit);
+        Ok(sorted)
+    }
+
+    pub fn top_tags(&self, limit: usize) -> Result<Vec<(String, usize)>, Box<dyn std::error::Error>> {
+        self.top_values_for_field(self.tags, limit)
+    }
+
+    pub fn top_topics(&self, limit: usize) -> Result<Vec<(String, usize)>, Box<dyn std::error::Error>> {
+        self.top_values_for_field(self.topics, limit)
+    }
+
+    pub fn top_entities(&self, limit: usize) -> Result<Vec<(String, usize)>, Box<dyn std::error::Error>> {
+        self.top_values_for_field(self.entities, limit)
     }
 
     pub fn search(

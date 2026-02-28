@@ -16,6 +16,7 @@ pub struct BrowseResponse {
     pub path: String,
     pub parent: Option<String>,
     pub entries: Vec<String>,
+    pub md_file_count: usize,
 }
 
 pub fn list_dir(dir: &PathBuf) -> Result<BrowseResponse, String> {
@@ -27,9 +28,21 @@ pub fn list_dir(dir: &PathBuf) -> Result<BrowseResponse, String> {
         .parent()
         .map(|p| p.to_string_lossy().into_owned());
 
-    let mut entries: Vec<String> = std::fs::read_dir(&path)
+    let all: Vec<_> = std::fs::read_dir(&path)
         .map_err(|e| format!("Cannot read directory: {e}"))?
         .filter_map(|e| e.ok())
+        .collect();
+
+    let md_file_count = all.iter()
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .ends_with(".md")
+        })
+        .count();
+
+    let mut entries: Vec<String> = all.iter()
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -42,6 +55,7 @@ pub fn list_dir(dir: &PathBuf) -> Result<BrowseResponse, String> {
         path: path.to_string_lossy().into_owned(),
         parent,
         entries,
+        md_file_count,
     })
 }
 
@@ -69,6 +83,7 @@ pub async fn handle_browse(
 mod tests {
     use super::*;
     use std::env;
+    use tempfile;
 
     #[test]
     fn test_list_dir_returns_only_dirs() {
@@ -94,5 +109,27 @@ mod tests {
         for entry in &result.entries {
             assert!(!entry.starts_with('.'), "dotfile should be hidden: {entry}");
         }
+    }
+
+    #[test]
+    fn test_list_dir_counts_md_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "").unwrap();
+        std::fs::write(dir.path().join("b.md"), "").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "").unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+
+        let result = list_dir(&dir.path().to_path_buf()).unwrap();
+        assert_eq!(result.md_file_count, 2, "should count only .md files, not .txt or dirs");
+        assert_eq!(result.entries, vec!["subdir"]);
+    }
+
+    #[test]
+    fn test_list_dir_md_count_zero_when_no_md_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("readme.txt"), "").unwrap();
+
+        let result = list_dir(&dir.path().to_path_buf()).unwrap();
+        assert_eq!(result.md_file_count, 0);
     }
 }

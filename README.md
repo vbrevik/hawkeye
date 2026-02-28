@@ -124,6 +124,48 @@ Results ranked by relevance score:
 ]
 ```
 
+### Get facets (tags, topics, entities)
+
+Returns the most frequent tags, topics, and entities across all indexed files:
+
+```bash
+curl "http://localhost:3000/facets"
+```
+
+```json
+{
+  "tags": [
+    {"name": "kubernetes", "count": 42},
+    {"name": "devops", "count": 31}
+  ],
+  "topics": [
+    {"name": "infrastructure", "count": 18}
+  ],
+  "entities": [
+    {"name": "ArgoCD", "count": 9}
+  ]
+}
+```
+
+Returns up to 20 tags, 10 topics, and 15 entities ranked by frequency.
+
+### Browse a directory
+
+```bash
+curl "http://localhost:3000/browse?path=/Users/you/notes"
+```
+
+```json
+{
+  "path": "/Users/you/notes",
+  "parent": "/Users/you",
+  "entries": ["projects", "archive"],
+  "md_file_count": 47
+}
+```
+
+`md_file_count` shows how many `.md` files are in the directory (not recursive).
+
 ### Get single file summary
 
 ```bash

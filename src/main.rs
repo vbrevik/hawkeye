@@ -41,6 +41,7 @@ async fn main() {
         .route("/status", get(api::status::handle_status))
         .route("/mlx-status", get(api::status::handle_mlx_status))
         .route("/search", get(api::search::handle_search))
+        .route("/facets", get(api::tags::handle_facets))
         .route("/summary/{file}", get(api::summary::handle_summary))
         .route("/browse", get(api::browse::handle_browse))
         .with_state(state);
