@@ -550,12 +550,12 @@ const HTML: &str = r##"<!DOCTYPE html>
   }
 
   function computeRelated(source, allResults) {
-    const myTags = new Set((source.tags || "").split(" ").filter(Boolean));
-    const myEntities = new Set((source.entities || "").split(" ").filter(Boolean));
+    const myTags = new Set(Array.isArray(source.tags) ? source.tags : (source.tags || "").split(" ").filter(Boolean));
+    const myEntities = new Set(Array.isArray(source.entities) ? source.entities : (source.entities || "").split(" ").filter(Boolean));
     return allResults.filter(r => {
       if (r.file === source.file) return false;
-      const rTags = (r.tags || "").split(" ").filter(Boolean);
-      const rEntities = (r.entities || "").split(" ").filter(Boolean);
+      const rTags = Array.isArray(r.tags) ? r.tags : (r.tags || "").split(" ").filter(Boolean);
+      const rEntities = Array.isArray(r.entities) ? r.entities : (r.entities || "").split(" ").filter(Boolean);
       return rTags.some(t => myTags.has(t)) || rEntities.some(e => myEntities.has(e));
     }).slice(0, 5);
   }
@@ -642,7 +642,7 @@ const HTML: &str = r##"<!DOCTYPE html>
         rt.textContent = rel.title || rel.file;
         const rl = document.createElement("div");
         rl.className = "related-card-tldr";
-        rl.textContent = rel.tldr;
+        rl.textContent = rel.tldr || "";
         rc.append(rt, rl);
         rc.addEventListener("click", () => openDetailPanel(rel));
         relList.appendChild(rc);
@@ -658,8 +658,6 @@ const HTML: &str = r##"<!DOCTYPE html>
     document.querySelectorAll(".card").forEach(c =>
       c.classList.toggle("active", c.dataset.file === result.file)
     );
-    location.hash = "file=" + encodeURIComponent(result.file);
-
     // Show skeleton while fetching
     const panel = document.getElementById("detailPanel");
     const sk = document.createElement("div");
