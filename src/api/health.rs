@@ -1,5 +1,9 @@
+use reqwest::Client;
 use serde::Serialize;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 #[derive(Debug, Serialize, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -24,6 +28,70 @@ pub fn classify(elapsed: Duration) -> ServiceStatus {
         ServiceStatus::Degraded
     } else {
         ServiceStatus::Down
+    }
+}
+
+pub async fn tcp_check(addr: &str, name: &str) -> ServiceHealth {
+    let start = Instant::now();
+    match timeout(Duration::from_secs(2), TcpStream::connect(addr)).await {
+        Ok(Ok(_)) => {
+            let elapsed = start.elapsed();
+            ServiceHealth {
+                name: name.to_string(),
+                status: classify(elapsed),
+                latency_ms: Some(elapsed.as_millis() as u64),
+            }
+        }
+        _ => ServiceHealth {
+            name: name.to_string(),
+            status: ServiceStatus::Down,
+            latency_ms: None,
+        },
+    }
+}
+
+pub async fn check_redis(addr: &str) -> ServiceHealth {
+    let start = Instant::now();
+    let result = timeout(Duration::from_secs(2), async {
+        let mut stream = TcpStream::connect(addr).await?;
+        stream.write_all(b"*1\r\n$4\r\nPING\r\n").await?;
+        let mut buf = [0u8; 7];
+        AsyncReadExt::read(&mut stream, &mut buf).await?;
+        Ok::<_, std::io::Error>(buf.starts_with(b"+PONG"))
+    })
+    .await;
+
+    let elapsed = start.elapsed();
+    match result {
+        Ok(Ok(true)) => ServiceHealth {
+            name: "redis".to_string(),
+            status: classify(elapsed),
+            latency_ms: Some(elapsed.as_millis() as u64),
+        },
+        _ => ServiceHealth {
+            name: "redis".to_string(),
+            status: ServiceStatus::Down,
+            latency_ms: None,
+        },
+    }
+}
+
+pub async fn http_check(client: &Client, url: &str, name: &str) -> ServiceHealth {
+    let start = Instant::now();
+    match timeout(Duration::from_secs(2), client.get(url).send()).await {
+        Ok(Ok(res)) if res.status().is_success() => {
+            let elapsed = start.elapsed();
+            ServiceHealth {
+                name: name.to_string(),
+                status: classify(elapsed),
+                latency_ms: Some(elapsed.as_millis() as u64),
+            }
+        }
+        _ => ServiceHealth {
+            name: name.to_string(),
+            status: ServiceStatus::Down,
+            latency_ms: None,
+        },
     }
 }
 
