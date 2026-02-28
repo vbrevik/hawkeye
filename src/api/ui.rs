@@ -309,7 +309,7 @@ const HTML: &str = r##"<!DOCTYPE html>
     </div>
   </aside>
 
-  <main class="main">
+  <main class="results-col">
     <div class="search-bar-wrap">
       <div class="search-bar">
         <span class="search-icon">â</span>
@@ -329,6 +329,15 @@ const HTML: &str = r##"<!DOCTYPE html>
       </div>
     </div>
   </main>
+
+  <div class="detail-panel" id="detailPanel">
+    <div class="detail-placeholder" id="detailPlaceholder">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
+      <p>Select a document to explore</p>
+    </div>
+  </div>
 </div>
 
 <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
