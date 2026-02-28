@@ -34,14 +34,15 @@ const HTML: &str = r##"<!DOCTYPE html>
       --drawer-w: 340px;
     }
 
-    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
 
-    .layout { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+    .layout { display: flex; height: 100vh; overflow: hidden; }
 
     .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0;
       background: var(--surface); border-right: 1px solid var(--border);
       padding: 20px 16px; display: flex; flex-direction: column; gap: 24px;
-      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      height: 100vh; overflow-y: auto;
     }
 
     .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; color: var(--text); }
@@ -91,7 +92,7 @@ const HTML: &str = r##"<!DOCTYPE html>
     .chip .x { color: var(--text-3); font-size: 9px; margin-left: 1px; }
     .no-filters { font-size: 11px; color: var(--text-3); font-style: italic; }
 
-    .main { display: flex; flex-direction: column; min-height: 100vh; overflow: hidden; }
+    .results-col { flex: 1; min-width: 280px; display: flex; flex-direction: column; overflow: hidden; }
 
     .search-bar-wrap {
       padding: 20px 28px 16px; position: sticky; top: 0;
@@ -113,7 +114,7 @@ const HTML: &str = r##"<!DOCTYPE html>
       font-family: var(--mono); padding: 2px 6px; flex-shrink: 0;
     }
 
-    .results-area { padding: 20px 28px; flex: 1; }
+    .results-area { padding: 20px 28px; flex: 1; overflow-y: auto; }
     .results-count { font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
     .results-list { display: flex; flex-direction: column; gap: 8px; }
 
@@ -140,6 +141,43 @@ const HTML: &str = r##"<!DOCTYPE html>
     .skeleton { border-radius: var(--r); background: var(--surface); animation: shimmer 1.4s infinite; }
     @keyframes shimmer { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.9; } }
     .sk-card { height: 90px; border-radius: 10px; margin-bottom: 8px; }
+
+    .detail-panel {
+      width: 42%; flex-shrink: 0;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+
+    @media (max-width: 900px) {
+      .detail-panel { display: none; }
+    }
+
+    .detail-placeholder {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; color: var(--text-3); padding: 40px;
+    }
+    .detail-placeholder p { font-size: 13px; }
+
+    .detail-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    .detail-title { font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.3; }
+    .detail-tldr { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+    .detail-meta { font-size: 11px; color: var(--text-3); padding-top: 4px; border-top: 1px solid var(--border); display: flex; gap: 16px; }
+    .detail-meta strong { color: var(--text-2); }
+    .detail-slabel { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 6px; }
+    .detail-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .detail-chip { background: var(--surface-2); border-radius: 4px; color: var(--text-2); font-size: 12px; padding: 3px 8px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .detail-chip:hover { background: var(--accent-dim); color: var(--accent-hover); }
+    .detail-chip.plain { cursor: default; }
+    .detail-chip.plain:hover { background: var(--surface-2); color: var(--text-2); }
+    .detail-related-divider { font-size: 11px; color: var(--text-3); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    .detail-related-list { display: flex; flex-direction: column; gap: 6px; }
+    .related-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; }
+    .related-card:hover { border-color: rgba(99,102,241,0.5); }
+    .related-card-title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 3px; }
+    .related-card-tldr { font-size: 12px; color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
     .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 40; }
     .drawer-overlay.open { opacity: 1; pointer-events: all; }
@@ -194,6 +232,10 @@ const HTML: &str = r##"<!DOCTYPE html>
       padding: 10px 8px; font-size: 12px;
       color: var(--text-3); text-align: center;
     }
+    .browser-md-count {
+      font-size: 11px; color: var(--text-2); min-height: 16px;
+    }
+    .browser-md-count.none { color: var(--text-3); }
   </style>
 </head>
 <body>
@@ -218,6 +260,7 @@ const HTML: &str = r##"<!DOCTYPE html>
       <div class="browser-wrap">
         <div class="browser-crumb" id="browserCrumb"></div>
         <div class="browser-list" id="browserList"></div>
+        <div class="browser-md-count" id="browserMdCount"></div>
         <button class="btn" id="ingestBtn" onclick="ingestCurrent()">Ingest here</button>
         <div id="ingestNotice" class="ingest-notice" style="display:none"></div>
       </div>
@@ -234,6 +277,27 @@ const HTML: &str = r##"<!DOCTYPE html>
         <div class="stat-cell"><div class="val" id="statCompleted">0</div><div class="lbl">Done</div></div>
         <div class="stat-cell prog"><div class="val" id="statInProgress">0</div><div class="lbl">Active</div></div>
         <div class="stat-cell fail"><div class="val" id="statFailed">0</div><div class="lbl">Failed</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Tags</div>
+      <div class="filter-chips" id="tagCloud">
+        <span class="no-filters">Ingest documents to see tags</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Topics</div>
+      <div class="filter-chips" id="topicCloud">
+        <span class="no-filters">—</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Entities</div>
+      <div class="filter-chips" id="entityCloud">
+        <span class="no-filters">—</span>
       </div>
     </div>
 
@@ -601,6 +665,12 @@ const HTML: &str = r##"<!DOCTYPE html>
     const parts = data.path.split("/").filter(Boolean);
     const short = parts.length > 2 ? "\u2026/" + parts.slice(-2).join("/") : data.path;
     crumb.textContent = short;
+
+    const mdCount = document.getElementById("browserMdCount");
+    const n = data.md_file_count || 0;
+    mdCount.textContent = n === 0 ? "No .md files here" : n + " .md file" + (n !== 1 ? "s" : "");
+    mdCount.className = "browser-md-count" + (n === 0 ? " none" : "");
+
     while (list.firstChild) list.removeChild(list.firstChild);
     if (data.parent) {
       list.appendChild(makeBrowserRow("Parent", true, () => browseDir(data.parent)));
@@ -632,6 +702,7 @@ const HTML: &str = r##"<!DOCTYPE html>
       notice.style.display = "block";
       if (res.ok) {
         notice.textContent = "Queued " + data.files_queued + " files, skipped " + data.files_skipped;
+        if (data.files_queued > 0) setTimeout(refreshFacets, 5000);
       } else {
         notice.textContent = "Error: " + (data.message || res.statusText);
       }
@@ -674,8 +745,40 @@ const HTML: &str = r##"<!DOCTYPE html>
     } catch (_) {}
   }
 
+  function makeChipCloud(container, entries, prefix, emptyText) {
+    container.replaceChildren();
+    if (!entries || !entries.length) {
+      const s = document.createElement("span");
+      s.className = "no-filters";
+      s.textContent = emptyText;
+      container.appendChild(s);
+      return;
+    }
+    for (const { name, count } of entries) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const label = document.createTextNode(prefix + name + "\u00a0");
+      const badge = document.createElement("span");
+      badge.style.cssText = "opacity:0.55;font-size:9px;";
+      badge.textContent = count;
+      chip.append(label, badge);
+      chip.addEventListener("click", () => addFilter(name));
+      container.appendChild(chip);
+    }
+  }
+
+  async function refreshFacets() {
+    try {
+      const f = await fetch("/facets").then(r => r.json());
+      makeChipCloud(document.getElementById("tagCloud"), f.tags, "#", "Ingest documents to see tags");
+      makeChipCloud(document.getElementById("topicCloud"), f.topics, "", "—");
+      makeChipCloud(document.getElementById("entityCloud"), f.entities, "", "—");
+    } catch (_) {}
+  }
+
   pollStatus();
   setInterval(pollStatus, 3000);
+  refreshFacets();
   browseDir(null);
 </script>
 </body>
