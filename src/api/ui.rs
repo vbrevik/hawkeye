@@ -658,7 +658,7 @@ const HTML: &str = r##"<!DOCTYPE html>
         rl.className = "related-card-tldr";
         rl.textContent = rel.tldr || "";
         rc.append(rt, rl);
-        rc.addEventListener("click", () => openDetailPanel(rel));
+        rc.addEventListener("click", () => selectResult(rel));
         relList.appendChild(rc);
       }
       body.appendChild(relList);
