@@ -613,7 +613,7 @@ const HTML: &str = r##"<!DOCTYPE html>
     dEl.textContent = "Indexed " + (s.created_at ? new Date(s.created_at).toLocaleDateString() : "\u2014");
     meta.append(wEl, dEl);
 
-    const tags = (s.tags || "").split(" ").filter(Boolean);
+    const tags = Array.isArray(s.tags) ? s.tags : (s.tags || "").split(" ").filter(Boolean);
     const topics = Array.isArray(s.topics) ? s.topics : (s.topics || "").split(" ").filter(Boolean);
     const entities = Array.isArray(s.entities) ? s.entities : (s.entities || "").split(" ").filter(Boolean);
 
