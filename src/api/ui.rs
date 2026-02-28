@@ -372,6 +372,7 @@ const HTML: &str = r##"<!DOCTYPE html>
       if (searchInput.value) { searchInput.value = ""; doSearch(); }
       else if (window.innerWidth >= 900) clearDetailPanel();
       else closeDrawer();
+      e.stopPropagation();
     }
   });
 
