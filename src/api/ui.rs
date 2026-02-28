@@ -370,6 +370,7 @@ const HTML: &str = r##"<!DOCTYPE html>
   searchInput.addEventListener("keydown", e => {
     if (e.key === "Escape") {
       if (searchInput.value) { searchInput.value = ""; doSearch(); }
+      else if (window.innerWidth >= 900) clearDetailPanel();
       else closeDrawer();
     }
   });
@@ -378,7 +379,10 @@ const HTML: &str = r##"<!DOCTYPE html>
     if ((e.metaKey || e.ctrlKey) && e.key === "k") {
       e.preventDefault(); searchInput.focus(); searchInput.select();
     }
-    if (e.key === "Escape") closeDrawer();
+    if (e.key === "Escape") {
+      if (window.innerWidth >= 900) clearDetailPanel();
+      else closeDrawer();
+    }
   });
 
   async function doSearch() {
@@ -406,6 +410,8 @@ const HTML: &str = r##"<!DOCTYPE html>
   }
 
   function showEmpty(msg) {
+    currentResults = [];
+    if (window.innerWidth >= 900) clearDetailPanel();
     const container = document.getElementById("resultsContainer");
     const wrap = document.createElement("div");
     wrap.className = "placeholder";
@@ -429,6 +435,7 @@ const HTML: &str = r##"<!DOCTYPE html>
   }
 
   function renderResults(data, query) {
+    currentResults = data;
     const container = document.getElementById("resultsContainer");
     if (!data.length) {
       const wrap = document.createElement("div");
@@ -437,6 +444,7 @@ const HTML: &str = r##"<!DOCTYPE html>
       p.textContent = "No results for \u201c" + query + "\u201d";
       wrap.appendChild(p);
       container.replaceChildren(wrap);
+      clearDetailPanel();
       return;
     }
 
@@ -449,13 +457,18 @@ const HTML: &str = r##"<!DOCTYPE html>
     for (const r of data) list.appendChild(makeCard(r));
 
     container.replaceChildren(count, list);
+
+    // Auto-select first result on desktop
+    if (window.innerWidth >= 900 && data.length) {
+      selectResult(data[0]);
+    }
   }
 
   function makeCard(r) {
     const card = document.createElement("div");
     card.className = "card" + (r.file === activeCardFile ? " active" : "");
     card.dataset.file = r.file;
-    card.addEventListener("click", () => openDrawer(r));
+    card.addEventListener("click", () => selectResult(r));
 
     const header = document.createElement("div");
     header.className = "card-header";
@@ -675,6 +688,14 @@ const HTML: &str = r##"<!DOCTYPE html>
     } catch (_) {
       // Fallback to search result payload — tags/entities are space-separated strings here
       renderDetailPanel(result, related);
+    }
+  }
+
+  function selectResult(r) {
+    if (window.innerWidth >= 900) {
+      openDetailPanel(r);
+    } else {
+      openDrawer(r);
     }
   }
 
