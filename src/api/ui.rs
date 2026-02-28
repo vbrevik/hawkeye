@@ -354,6 +354,7 @@ const HTML: &str = r##"<!DOCTYPE html>
   let activeFilters = new Set();
   let activeCardFile = null;
   let searchTimer = null;
+  let currentResults = [];   // latest search results for related-doc computation
 
   function setText(id, t) { document.getElementById(id).textContent = t; }
   function show(id) { document.getElementById(id).style.display = ""; }
@@ -519,6 +520,163 @@ const HTML: &str = r##"<!DOCTYPE html>
       chip.appendChild(x);
       chip.addEventListener("click", () => removeFilter(t));
       el.appendChild(chip);
+    }
+  }
+
+  function clearDetailPanel() {
+    const panel = document.getElementById("detailPanel");
+    const placeholder = document.getElementById("detailPlaceholder");
+    if (!placeholder) {
+      // re-create placeholder
+      panel.replaceChildren();
+      const ph = document.createElement("div");
+      ph.id = "detailPlaceholder";
+      ph.className = "detail-placeholder";
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "32"); svg.setAttribute("height", "32");
+      svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.5");
+      svg.setAttribute("opacity", "0.3");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M9 18l6-6-6-6");
+      svg.appendChild(path);
+      const p = document.createElement("p");
+      p.textContent = "Select a document to explore";
+      ph.append(svg, p);
+      panel.appendChild(ph);
+    }
+    activeCardFile = null;
+    document.querySelectorAll(".card").forEach(c => c.classList.remove("active"));
+  }
+
+  function computeRelated(source, allResults) {
+    const myTags = new Set((source.tags || "").split(" ").filter(Boolean));
+    const myEntities = new Set((source.entities || "").split(" ").filter(Boolean));
+    return allResults.filter(r => {
+      if (r.file === source.file) return false;
+      const rTags = (r.tags || "").split(" ").filter(Boolean);
+      const rEntities = (r.entities || "").split(" ").filter(Boolean);
+      return rTags.some(t => myTags.has(t)) || rEntities.some(e => myEntities.has(e));
+    }).slice(0, 5);
+  }
+
+  function renderDetailPanel(s, related) {
+    const panel = document.getElementById("detailPanel");
+
+    function makeDetailChips(values, clickable) {
+      const wrap = document.createElement("div");
+      wrap.className = "detail-chips";
+      if (!values || !values.length) {
+        const em = document.createElement("span");
+        em.style.cssText = "color:var(--text-3);font-size:12px;";
+        em.textContent = "\u2014";
+        wrap.appendChild(em);
+        return wrap;
+      }
+      for (const v of values) {
+        const chip = document.createElement("span");
+        chip.className = "detail-chip" + (clickable ? "" : " plain");
+        chip.textContent = clickable ? "#" + v : v;
+        if (clickable) chip.addEventListener("click", () => addFilter(v));
+        wrap.appendChild(chip);
+      }
+      return wrap;
+    }
+
+    function makeDetailSection(label, contentNode) {
+      const wrap = document.createElement("div");
+      const lbl = document.createElement("div");
+      lbl.className = "detail-slabel";
+      lbl.textContent = label;
+      wrap.append(lbl, contentNode);
+      return wrap;
+    }
+
+    const body = document.createElement("div");
+    body.className = "detail-body";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "detail-title";
+    titleEl.textContent = s.title || s.source || s.file || "";
+
+    const tldrEl = document.createElement("div");
+    tldrEl.className = "detail-tldr";
+    tldrEl.textContent = s.tldr || "";
+
+    const meta = document.createElement("div");
+    meta.className = "detail-meta";
+    const wEl = document.createElement("div");
+    const wStrong = document.createElement("strong");
+    wStrong.textContent = (s.word_count || 0).toLocaleString();
+    wEl.append(wStrong, " words");
+    const dEl = document.createElement("div");
+    dEl.textContent = "Indexed " + (s.created_at ? new Date(s.created_at).toLocaleDateString() : "\u2014");
+    meta.append(wEl, dEl);
+
+    const tags = (s.tags || "").split(" ").filter(Boolean);
+    const topics = Array.isArray(s.topics) ? s.topics : (s.topics || "").split(" ").filter(Boolean);
+    const entities = Array.isArray(s.entities) ? s.entities : (s.entities || "").split(" ").filter(Boolean);
+
+    body.append(
+      titleEl,
+      tldrEl,
+      makeDetailSection("Tags", makeDetailChips(tags, true)),
+      makeDetailSection("Topics", makeDetailChips(topics, false)),
+      makeDetailSection("Entities", makeDetailChips(entities, false)),
+      meta
+    );
+
+    if (related && related.length) {
+      const divider = document.createElement("div");
+      divider.className = "detail-related-divider";
+      divider.textContent = "Related";
+      body.appendChild(divider);
+
+      const relList = document.createElement("div");
+      relList.className = "detail-related-list";
+      for (const rel of related) {
+        const rc = document.createElement("div");
+        rc.className = "related-card";
+        const rt = document.createElement("div");
+        rt.className = "related-card-title";
+        rt.textContent = rel.title || rel.file;
+        const rl = document.createElement("div");
+        rl.className = "related-card-tldr";
+        rl.textContent = rel.tldr;
+        rc.append(rt, rl);
+        rc.addEventListener("click", () => openDetailPanel(rel));
+        relList.appendChild(rc);
+      }
+      body.appendChild(relList);
+    }
+
+    panel.replaceChildren(body);
+  }
+
+  async function openDetailPanel(result) {
+    activeCardFile = result.file;
+    document.querySelectorAll(".card").forEach(c =>
+      c.classList.toggle("active", c.dataset.file === result.file)
+    );
+    location.hash = "file=" + encodeURIComponent(result.file);
+
+    // Show skeleton while fetching
+    const panel = document.getElementById("detailPanel");
+    const sk = document.createElement("div");
+    sk.className = "skeleton";
+    sk.style.cssText = "margin:20px;height:180px;border-radius:8px;";
+    panel.replaceChildren(sk);
+
+    const related = computeRelated(result, currentResults);
+
+    try {
+      const res = await fetch("/summary/" + encodeURIComponent(result.file));
+      if (!res.ok) throw new Error("not found");
+      const s = await res.json();
+      renderDetailPanel(s, related);
+    } catch (_) {
+      // Fallback to search result payload — tags/entities are space-separated strings here
+      renderDetailPanel(result, related);
     }
   }
 
