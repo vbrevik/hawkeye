@@ -51,7 +51,6 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
 - `shared/shutdown.rs` — `POST /shutdown` graceful server shutdown (optional `?docker=true`)
 - `shared/status.rs` — `GET /status` queue progress, `GET /mlx-status` sidecar health
-- `shared/ui.rs` — Legacy inline HTML/CSS/JS web UI (replaced by SvelteKit `web/`, kept for reference)
 - `shared/error.rs` — Unified `AppError` enum (BadRequest/NotFound/Internal) implementing `IntoResponse`
 
 ### Scripts
