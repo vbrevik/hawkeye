@@ -19,15 +19,18 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - `src/main.rs` — Axum server entrypoint, route definitions
 - `src/config.rs` — CLI args via `clap::Parser` (AppConfig)
 - `src/api/` — Route handlers: ui, ingest, search, status, summary, tags, browse, health
-- `src/api/mod.rs` — `AppState` struct (config, queue, inference client, indexer)
+- `src/api/mod.rs` — `AppState` struct (config, queue, inference client, indexer, pg_pool)
 - `src/inference/` — MLX sidecar HTTP client
 - `src/queue/` — Concurrent work queue (manager + workers)
 - `src/scanner/` — Filesystem `.md` file discovery
 - `src/search/` — Tantivy full-text index
+- `src/db/` — Postgres CRUD (documents, summaries) via sqlx `query_as` runtime checking
 - `src/summary/` — `.summary.json` read/write
 - `tests/integration_test.rs` — Integration tests
 - `test_data/` — Sample markdown files for testing
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
+
+- `migrations/` — sqlx Postgres migrations (run automatically on startup)
 
 **Data flow:** `.md` files → Rust queue → mlx-lm sidecar → `.summary.json` + Tantivy index → search API + web UI
 
@@ -54,4 +57,5 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
 - Model variants: 4-bit (~13GB RAM) vs 8-bit (~22GB) — pass model arg to start script: `./scripts/start_mlx.sh InferenceIllusionist/gpt-oss-20b-MLX-4bit`
 - Running server holds Tantivy index lock — kill existing process before starting a new instance
+- `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
