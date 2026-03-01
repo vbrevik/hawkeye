@@ -24,6 +24,7 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "mig
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
 deadpool-redis = "0.18"
 redis = { version = "0.27", features = ["aio", "tokio-comp", "streams"] }
+tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
 http-body-util = "0.1.3"

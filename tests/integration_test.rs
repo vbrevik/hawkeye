@@ -9,6 +9,7 @@ use hawkeye::{
         consumer::spawn_consumers,
         RedisQueue,
     },
+    features::search::facets::handle_facets,
     features::search::handler::handle_search,
     features::search::SearchIndexer,
     features::semantic::EmbedClient,
@@ -19,6 +20,7 @@ use hawkeye::{
     shared::health::handle_health,
     shared::inference::client::InferenceClient,
     shared::state::AppState,
+    shared::status::handle_status,
 };
 use http_body_util::BodyExt;
 use serde_json::json;
@@ -28,6 +30,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Mutex};
+use chrono::Utc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -374,15 +377,15 @@ async fn create_test_app_state(
     (state, pg_clone)
 }
 
-/// Helper: send a GET request to the app and return (status, body bytes).
-async fn get_request(app: Router, uri: &str) -> (StatusCode, bytes::Bytes) {
+/// Helper: send a GET request to the app and return (status, body as Vec<u8>).
+async fn get_request(app: Router, uri: &str) -> (StatusCode, Vec<u8>) {
     let req = Request::builder()
         .uri(uri)
         .body(Body::empty())
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
     let status = response.status();
-    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body = response.into_body().collect().await.unwrap().to_bytes().to_vec();
     (status, body)
 }
 
@@ -399,7 +402,7 @@ async fn test_search_handler() {
         idx.index_summary(&Summary {
             source: "auth.md".to_string(),
             source_hash: "sha256:aaa".to_string(),
-            created_at: chrono::Utc::now(),
+            created_at: Utc::now(),
             tldr: "Guide to setting up OAuth2 authentication".to_string(),
             title: "OAuth2 Setup Guide".to_string(),
             tags: vec!["auth".to_string(), "oauth2".to_string()],
@@ -411,7 +414,7 @@ async fn test_search_handler() {
         idx.index_summary(&Summary {
             source: "deploy.md".to_string(),
             source_hash: "sha256:bbb".to_string(),
-            created_at: chrono::Utc::now(),
+            created_at: Utc::now(),
             tldr: "Steps for deploying to Kubernetes cluster".to_string(),
             title: "K8s Deployment".to_string(),
             tags: vec!["kubernetes".to_string(), "devops".to_string()],
@@ -513,7 +516,7 @@ async fn test_summary_handler() {
     ));
     let (state, pg_pool) = create_test_app_state(indexer).await;
 
-    // Insert a document and summary into Postgres
+    // Use a unique filename (no slashes) so it works with the {file} path segment
     let source_path = format!("test-summary-{}.md", Uuid::new_v4());
     let doc = documents::upsert_document(
         &pg_pool,
@@ -609,10 +612,114 @@ async fn test_health_handler() {
         assert!(svc["status"].is_string(), "Service missing 'status' field");
     }
 
-    // Redis should be up (required for integration tests)
+    // Redis and Postgres should be up (required for integration tests)
     let redis = services.iter().find(|s| s["name"] == "redis").unwrap();
     assert_eq!(redis["status"], "up", "Redis should be up for integration tests");
     assert!(redis["latency_ms"].is_number());
+
+    let pg = services.iter().find(|s| s["name"] == "postgres").unwrap();
+    assert_eq!(pg["status"], "up", "Postgres should be up for integration tests");
+    assert!(pg["latency_ms"].is_number());
+}
+
+#[tokio::test]
+async fn test_facets_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    // Index documents with known tags, topics, entities
+    {
+        let mut idx = indexer.lock().await;
+        idx.index_summary(&Summary {
+            source: "auth.md".to_string(),
+            source_hash: "sha256:f1".to_string(),
+            created_at: Utc::now(),
+            tldr: "Auth guide".to_string(),
+            title: "Auth".to_string(),
+            tags: vec!["security".to_string(), "auth".to_string()],
+            entities: vec!["OAuth2".to_string()],
+            topics: vec!["authentication".to_string()],
+            relationships: vec![],
+            word_count: 50,
+        }).unwrap();
+        idx.index_summary(&Summary {
+            source: "deploy.md".to_string(),
+            source_hash: "sha256:f2".to_string(),
+            created_at: Utc::now(),
+            tldr: "Deploy guide".to_string(),
+            title: "Deploy".to_string(),
+            tags: vec!["devops".to_string(), "auth".to_string()],
+            entities: vec!["Kubernetes".to_string()],
+            topics: vec!["deployment".to_string()],
+            relationships: vec![],
+            word_count: 80,
+        }).unwrap();
+    }
+
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let app = Router::new()
+        .route("/facets", get(handle_facets))
+        .with_state(state);
+
+    let (status, body) = get_request(app, "/facets").await;
+    assert_eq!(status, StatusCode::OK);
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Should have tags, topics, entities arrays
+    let tags = result["tags"].as_array().unwrap();
+    let topics = result["topics"].as_array().unwrap();
+    let entities = result["entities"].as_array().unwrap();
+
+    assert!(!tags.is_empty(), "Expected at least one tag facet");
+    assert!(!topics.is_empty(), "Expected at least one topic facet");
+    assert!(!entities.is_empty(), "Expected at least one entity facet");
+
+    // "auth" appears in both docs, so it should be the top tag with count 2
+    let auth_tag = tags.iter().find(|t| t["name"] == "auth").unwrap();
+    assert_eq!(auth_tag["count"], 2);
+
+    // Each entry should have name and count fields
+    for tag in tags {
+        assert!(tag["name"].is_string(), "Tag missing 'name' field");
+        assert!(tag["count"].is_number(), "Tag missing 'count' field");
+    }
+}
+
+#[tokio::test]
+async fn test_status_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, _pg) = create_test_app_state(indexer).await;
+
+    // Clean up any leftover state from previous test runs, then re-create the group
+    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
+    queue.cleanup().await.unwrap();
+    queue.ensure_group().await.unwrap();
+
+    let app = Router::new()
+        .route("/status", get(handle_status))
+        .with_state(state);
+
+    let (status, body) = get_request(app, "/status").await;
+    assert_eq!(status, StatusCode::OK);
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Should have standard queue status fields
+    assert!(result["total"].is_number(), "Missing 'total' field");
+    assert!(result["in_progress"].is_number(), "Missing 'in_progress' field");
+    assert!(result["completed"].is_number(), "Missing 'completed' field");
+    assert!(result["failed"].is_number(), "Missing 'failed' field");
+
+    // Fresh queue should have all zeros
+    assert_eq!(result["total"], 0);
+    assert_eq!(result["in_progress"], 0);
+
+    // Cleanup
+    queue.cleanup().await.unwrap();
 }
 
 #[tokio::test]

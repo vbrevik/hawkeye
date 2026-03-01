@@ -1,5 +1,9 @@
 /target
+/static
 .eagle3_index/
 .hawkeye_index/
 *.summary.json
 .env
+results*.json
+web/node_modules
+web/.svelte-kit

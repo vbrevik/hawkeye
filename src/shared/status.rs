@@ -1,3 +1,4 @@
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use crate::features::queue::stream::{QueueStatus, RedisQueue};
 use axum::extract::State;
@@ -8,21 +9,13 @@ use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub async fn handle_status(State(state): State<Arc<AppState>>) -> Json<QueueStatus> {
+pub async fn handle_status(State(state): State<Arc<AppState>>) -> Result<Json<QueueStatus>, AppError> {
     let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
-    match queue.read_status().await {
-        Ok(status) => Json(status),
-        Err(e) => {
-            tracing::error!(error = %e, "failed to read queue status");
-            Json(QueueStatus {
-                total: 0,
-                completed: 0,
-                failed: 0,
-                in_progress: 0,
-                errors: vec![],
-            })
-        }
-    }
+    let status = queue.read_status().await.map_err(|e| {
+        tracing::error!(error = %e, "failed to read queue status");
+        AppError::internal(e)
+    })?;
+    Ok(Json(status))
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +49,7 @@ pub async fn handle_mlx_status(State(state): State<Arc<AppState>>) -> Json<MlxSt
                 .await
                 .ok()
                 .and_then(|v| v["data"][0]["id"].as_str().map(String::from));
+            tracing::info!(model = ?model, "mlx online");
             Json(MlxStatus {
                 online: true,
                 model,
@@ -67,14 +61,17 @@ pub async fn handle_mlx_status(State(state): State<Arc<AppState>>) -> Json<MlxSt
             model: None,
             message: format!("HTTP {}", res.status()),
         }),
-        Err(e) => Json(MlxStatus {
-            online: false,
-            model: None,
-            message: if e.is_timeout() {
-                "Timeout".to_string()
-            } else {
-                "Offline".to_string()
-            },
-        }),
+        Err(e) => {
+            tracing::warn!(error = %e, "mlx offline");
+            Json(MlxStatus {
+                online: false,
+                model: None,
+                message: if e.is_timeout() {
+                    "Timeout".to_string()
+                } else {
+                    "Offline".to_string()
+                },
+            })
+        }
     }
 }

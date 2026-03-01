@@ -51,7 +51,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
 - `shared/shutdown.rs` — `POST /shutdown` graceful server shutdown (optional `?docker=true`)
 - `shared/status.rs` — `GET /status` queue progress, `GET /mlx-status` sidecar health
-- `shared/ui.rs` — Inline HTML/CSS/JS web UI (search, browse, ingest, facets, detail panel)
+- `shared/ui.rs` — Legacy inline HTML/CSS/JS web UI (replaced by SvelteKit `web/`, kept for reference)
+- `shared/error.rs` — Unified `AppError` enum (BadRequest/NotFound/Internal) implementing `IntoResponse`
 
 ### Scripts
 
@@ -71,7 +72,23 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `migrations/` — sqlx Postgres migrations (run automatically on startup)
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
-**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus → search API + web UI
+**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus → search API → SvelteKit frontend
+
+### Frontend (`web/`)
+
+- `web/` — SvelteKit SPA (adapter-static → `static/` dir served by Axum via tower-http ServeDir)
+- `web/src/routes/+page.svelte` — Main app page (three-column layout: sidebar, results, detail panel)
+- `web/src/routes/+layout.svelte` — App shell (CSS import, ToastContainer)
+- `web/src/lib/api/` — TypeScript API client modules (search, browse, ingest, summary, status, health, shutdown)
+- `web/src/lib/api/types.ts` — Shared TypeScript types matching Rust API shapes
+- `web/src/lib/features/` — Feature components (search/SearchBar, search/ResultCard, browse/FileBrowser, facets/FacetCloud, status/InferenceBlock, status/QueueStats, summary/DetailPanel, summary/SummaryDrawer)
+- `web/src/lib/stores/` — Svelte stores (status polling, toast notifications)
+- `web/src/lib/components/` — Shared components (ToastContainer)
+- `web/src/app.css` — Global dark theme CSS (design system variables)
+- `web/svelte.config.js` — adapter-static outputs to `../static/`
+- `web/vite.config.ts` — Vite proxy → localhost:7700 for dev mode
+- Build: `cd web && npm run build` → outputs to `static/`
+- Dev: `cd web && npm run dev` (port 5173, proxies API to :7700)
 
 ## Conventions
 
@@ -95,6 +112,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - SHA-256 hash is stored in Postgres `documents.source_hash` — skip logic fetches known hashes from Postgres before scanning, so if you manually edit a `.md` file, re-ingest will detect the changed hash and reprocess it
 - `Arc<AppState>` is cloned into each handler via `State(state): State<Arc<AppState>>` extractor — the `Arc` means cheap clones, but you still need `.clone()` on the inner fields
 - The Tantivy index dir (`.hawkeye_index`) is gitignored — it's created automatically on first run
+- `static/` directory (SvelteKit build output) is gitignored — rebuild with `cd web && npm run build`
+- `web/node_modules` and `web/.svelte-kit` are gitignored
 - Integration tests require **both** Docker Postgres (5433) **and** Redis (6379) running — `docker compose up -d`
 - Integration tests use `Uuid::new_v4()` workspace IDs for Redis key isolation between parallel tests
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
@@ -120,7 +139,15 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `temperature` is configurable via `--temperature` CLI flag (default 0.1)
 - Inference latency is logged as `elapsed_ms` via `tracing::info!` after each successful LLM call
 - vllm-mlx sidecar supports continuous batching (`--continuous-batching` flag) — main advantage over mlx-lm at high concurrency
-- Benchmark results (20 files, 4 workers, Qwen2.5-7B-4bit): mlx-lm 0.41 files/s vs vllm-mlx 0.40 files/s — nearly identical at low concurrency
+- **Recommended config:** mlx-lm sidecar + 4 workers — simplest setup with best throughput
+- Benchmark results (Qwen2.5-7B-4bit, Apple Silicon):
+
+  | Config | mlx-lm | vllm-mlx | Winner |
+  |--------|--------|----------|--------|
+  | 4 workers, 20 docs | 48.6s (0.41 f/s) | 50.6s (0.40 f/s) | mlx-lm +4% |
+  | 8 workers, 100 docs | 372.4s (0.27 f/s) | 354.6s (0.28 f/s) | vllm-mlx +5% |
+
+  Throughput drops from ~0.4→0.28 f/s at 8 workers — extra concurrency adds overhead without speeding up GPU-bound inference. vllm-mlx continuous batching advantage is marginal (~5%) even at high concurrency
 
 ## Tech Debt Scan
 

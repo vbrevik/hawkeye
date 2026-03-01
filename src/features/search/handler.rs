@@ -1,7 +1,7 @@
 use crate::features::search::indexer::SearchResult;
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
 use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -15,11 +15,12 @@ pub struct SearchQuery {
 pub async fn handle_search(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SearchQuery>,
-) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
+) -> Result<Json<Vec<SearchResult>>, AppError> {
     let limit = params.limit.unwrap_or(20);
     let indexer = state.indexer.lock().await;
     let results = indexer
         .search(&params.q, limit)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::internal)?;
+    tracing::info!(query = %params.q, hits = results.len(), limit, "search");
     Ok(Json(results))
 }

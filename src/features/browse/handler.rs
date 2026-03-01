@@ -1,6 +1,6 @@
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -62,7 +62,7 @@ pub fn list_dir(dir: &std::path::Path) -> Result<BrowseResponse, String> {
 pub async fn handle_browse(
     State(_state): State<Arc<AppState>>,
     Query(q): Query<BrowseQuery>,
-) -> Result<Json<BrowseResponse>, (StatusCode, String)> {
+) -> Result<Json<BrowseResponse>, AppError> {
     let default_path = std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "/".to_string());
@@ -70,13 +70,15 @@ pub async fn handle_browse(
     let dir = PathBuf::from(&path_str);
 
     if !dir.exists() {
-        return Err((StatusCode::BAD_REQUEST, format!("Path does not exist: {path_str}")));
+        return Err(AppError::bad_request(format!("Path does not exist: {path_str}")));
     }
     if !dir.is_dir() {
-        return Err((StatusCode::BAD_REQUEST, format!("Not a directory: {path_str}")));
+        return Err(AppError::bad_request(format!("Not a directory: {path_str}")));
     }
 
-    list_dir(&dir).map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+    let resp = list_dir(&dir).map_err(AppError::internal)?;
+    tracing::info!(path = %path_str, dirs = resp.entries.len(), md_files = resp.md_file_count, "browse");
+    Ok(Json(resp))
 }
 
 #[cfg(test)]
@@ -119,7 +121,7 @@ mod tests {
         std::fs::write(dir.path().join("c.txt"), "").unwrap();
         std::fs::create_dir(dir.path().join("subdir")).unwrap();
 
-        let result = list_dir(&dir.path().to_path_buf()).unwrap();
+        let result = list_dir(dir.path()).unwrap();
         assert_eq!(result.md_file_count, 2, "should count only .md files, not .txt or dirs");
         assert_eq!(result.entries, vec!["subdir"]);
     }
@@ -129,7 +131,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("readme.txt"), "").unwrap();
 
-        let result = list_dir(&dir.path().to_path_buf()).unwrap();
+        let result = list_dir(dir.path()).unwrap();
         assert_eq!(result.md_file_count, 0);
     }
 }

@@ -2,9 +2,9 @@ use crate::features::ingest::scanner::scan_directory;
 use crate::features::queue::stream::{CancelResult, RedisQueue};
 use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use crate::shared::db::documents::get_source_hashes;
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,25 +26,22 @@ pub struct IngestResponse {
 pub async fn handle_ingest(
     State(state): State<Arc<AppState>>,
     Json(req): Json<IngestRequest>,
-) -> Result<Json<IngestResponse>, (StatusCode, String)> {
+) -> Result<Json<IngestResponse>, AppError> {
     let dir = PathBuf::from(&req.path);
     if !dir.is_dir() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!("{} is not a directory", req.path),
-        ));
+        return Err(AppError::bad_request(format!("{} is not a directory", req.path)));
     }
 
     let hashes = get_source_hashes(&state.pg_pool, DEFAULT_WORKSPACE_ID)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::internal)?;
     let known_hashes: HashMap<String, String> = hashes
         .into_iter()
         .map(|h| (h.source_path, h.source_hash))
         .collect();
 
     let scan_result = scan_directory(&dir, &known_hashes)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     let queued = scan_result.to_process.len();
     let skipped = scan_result.skipped;
@@ -53,7 +50,9 @@ pub async fn handle_ingest(
     queue
         .publish_files(&scan_result.to_process)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::internal)?;
+
+    tracing::info!(path = %req.path, queued, skipped, "ingest started");
 
     Ok(Json(IngestResponse {
         message: "Ingestion started".to_string(),
@@ -64,12 +63,12 @@ pub async fn handle_ingest(
 
 pub async fn handle_cancel(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<CancelResult>, (StatusCode, String)> {
+) -> Result<Json<CancelResult>, AppError> {
     let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
     let result = queue
         .cancel()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     tracing::info!(
         cancelled = result.cancelled,

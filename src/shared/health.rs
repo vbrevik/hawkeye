@@ -95,6 +95,7 @@ pub async fn http_check(client: &Client, url: &str, name: &str) -> ServiceHealth
     }
 }
 
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::State;
 use axum::Json;
@@ -107,7 +108,7 @@ pub struct HealthResponse {
     pub checked_at: String,
 }
 
-pub async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
+pub async fn handle_health(State(state): State<Arc<AppState>>) -> Result<Json<HealthResponse>, AppError> {
     let cfg = &state.config;
     let client = Client::builder()
         .timeout(Duration::from_secs(2))
@@ -120,12 +121,15 @@ pub async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRes
         .unwrap_or(&cfg.redis_url)
         .to_string();
 
-    // Extract "host:port" from postgres_url (after the @ sign)
+    // Extract "host:port" from postgres_url (after the @ sign, strip /database)
     let pg_addr = cfg.postgres_url
         .trim_start_matches("postgresql://")
         .trim_start_matches("postgres://")
         .split('@')
         .nth(1)
+        .unwrap_or("localhost:5433")
+        .split('/')
+        .next()
         .unwrap_or("localhost:5433")
         .to_string();
 
@@ -149,10 +153,14 @@ pub async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRes
         http_check(&client, &qwen3_url, "qwen3"),
     );
 
-    Json(HealthResponse {
-        services: vec![redis, postgres, etcd, minio, milvus, neo4j, qwen3],
+    let services = vec![redis, postgres, etcd, minio, milvus, neo4j, qwen3];
+    let up = services.iter().filter(|s| s.status == ServiceStatus::Up).count();
+    tracing::info!(up, total = services.len(), "health check");
+
+    Ok(Json(HealthResponse {
+        services,
         checked_at: Utc::now().to_rfc3339(),
-    })
+    }))
 }
 
 #[cfg(test)]

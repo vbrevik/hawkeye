@@ -1,3 +1,4 @@
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -19,7 +20,7 @@ pub struct ShutdownResponse {
 pub async fn handle_shutdown(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ShutdownParams>,
-) -> Json<ShutdownResponse> {
+) -> Result<Json<ShutdownResponse>, AppError> {
     if params.docker {
         tracing::info!("shutdown requested via API (with docker)");
         state.shutdown_docker.store(true, Ordering::SeqCst);
@@ -27,11 +28,11 @@ pub async fn handle_shutdown(
         tracing::info!("shutdown requested via API");
     }
     state.shutdown.send(true).ok();
-    Json(ShutdownResponse {
+    Ok(Json(ShutdownResponse {
         message: if params.docker {
             "Shutdown initiated (docker containers will be stopped)".to_string()
         } else {
             "Shutdown initiated".to_string()
         },
-    })
+    }))
 }

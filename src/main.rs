@@ -4,6 +4,7 @@ mod shared;
 use shared::state::AppState;
 use axum::routing::{get, post};
 use axum::Router;
+use tower_http::services::{ServeDir, ServeFile};
 use clap::Parser;
 use shared::config::{AppConfig, DEFAULT_WORKSPACE_ID};
 use features::semantic::EmbedClient;
@@ -126,7 +127,6 @@ async fn main() {
     });
 
     let app = Router::new()
-        .route("/", get(shared::ui::handle_ui))
         .route("/ingest", post(features::ingest::handler::handle_ingest))
         .route("/cancel", post(features::ingest::handler::handle_cancel))
         .route("/shutdown", post(shared::shutdown::handle_shutdown))
@@ -138,7 +138,10 @@ async fn main() {
         .route("/summary/{file}", get(features::summary::handler::handle_summary))
         .route("/browse", get(features::browse::handler::handle_browse))
         .route("/health", get(shared::health::handle_health))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .fallback_service(
+            ServeDir::new("static").fallback(ServeFile::new("static/index.html")),
+        );
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("hawkeye listening on http://{}", addr);
