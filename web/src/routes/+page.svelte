@@ -1,23 +1,23 @@
 <script lang="ts">
-	import type { SearchResult, Facets } from '$lib/api/types';
-	import { search, fetchFacets, reindex } from '$lib/api/search';
-	import { cancelJobs } from '$lib/api/ingest';
-	import { startPolling, stopPolling, queueStatus } from '$lib/stores/status';
-	import { startHealthPolling, stopHealthPolling, healthSummary } from '$lib/stores/health';
+	import type { SearchResult, Facets, GraphNode, GraphResponse } from '$lib/api/types';
+	import { search, fetchFacets } from '$lib/api/search';
+	import { fetchEntityGraph, fetchDocumentGraph } from '$lib/api/graph';
 	import { connectEvents, disconnectEvents } from '$lib/features/events/useEvents';
 	import { addToast } from '$lib/stores/toast';
 
 	import SearchBar from '$lib/features/search/SearchBar.svelte';
 	import ResultCard from '$lib/features/search/ResultCard.svelte';
-	import FileBrowser from '$lib/features/browse/FileBrowser.svelte';
-	import InferenceBlock from '$lib/features/status/InferenceBlock.svelte';
-	import QueueStats from '$lib/features/status/QueueStats.svelte';
-	import HealthPanel from '$lib/features/status/HealthPanel.svelte';
 	import DetailPanel from '$lib/features/summary/DetailPanel.svelte';
 	import SummaryDrawer from '$lib/features/summary/SummaryDrawer.svelte';
 	import Dashboard from '$lib/features/dashboard/Dashboard.svelte';
 	import Onboarding from '$lib/features/dashboard/Onboarding.svelte';
 	import FacetExplorer from '$lib/features/facets/FacetExplorer.svelte';
+	import GraphCanvas from '$lib/features/graph/GraphCanvas.svelte';
+	import Sidebar from '$lib/features/sidebar/Sidebar.svelte';
+
+	/* ── Page mode: search vs graph ── */
+	type PageMode = 'search' | 'graph';
+	let pageMode = $state<PageMode>('search');
 
 	let searchBar: SearchBar;
 	let query = $state('');
@@ -40,17 +40,81 @@
 			: 'onboarding'
 	);
 
-	let cancelConfirm = $state(false);
-	let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+	/* ── Graph state ── */
+	const GRAPH_NODE_COLORS: Record<string, string> = {
+		entity: '#6366f1',
+		document: '#34d399',
+		tag: '#fbbf24',
+		topic: '#f87171',
+	};
 
-	let reindexing = $state(false);
-	let reindexConfirm = $state(false);
-	let reindexTimer: ReturnType<typeof setTimeout> | null = null;
+	let graphQuery = $state('');
+	let graphData = $state<GraphResponse>({ nodes: [], edges: [] });
+	let graphLoading = $state(false);
+	let graphSearched = $state(false);
+	let graphHistory = $state<string[]>([]);
+	let graphSelectedNode = $state<GraphNode | null>(null);
 
-	/* Sidebar collapsible state */
-	let showHealth = $state(false);
-	let showIngest = $state(false);
-	let showQueue = $state(false);
+	async function searchEntity() {
+		const q = graphQuery.trim();
+		if (!q) return;
+		graphLoading = true;
+		graphSearched = true;
+		graphSelectedNode = null;
+		try {
+			graphData = await fetchEntityGraph(q);
+			if (graphData.nodes.length === 0) {
+				addToast(`No graph data found for "${q}"`, 'info');
+			}
+			if (!graphHistory.includes(q)) graphHistory = [...graphHistory.slice(-9), q];
+		} catch (e) {
+			addToast(`Graph query failed: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
+			graphData = { nodes: [], edges: [] };
+		} finally {
+			graphLoading = false;
+		}
+	}
+
+	async function handleGraphNodeClick(node: GraphNode) {
+		graphSelectedNode = node;
+		if (node.type === 'entity') {
+			graphQuery = node.label;
+			await searchEntity();
+		} else if (node.type === 'document' && node.id.startsWith('document:')) {
+			const docId = node.id.replace('document:', '');
+			graphLoading = true;
+			try {
+				graphData = await fetchDocumentGraph(docId);
+				graphQuery = node.label;
+				if (!graphHistory.includes(node.label)) graphHistory = [...graphHistory.slice(-9), node.label];
+			} catch (e) {
+				addToast(`Failed to load document graph: ${e instanceof Error ? e.message : 'Unknown'}`, 'error');
+			} finally {
+				graphLoading = false;
+			}
+		} else if (node.type === 'tag' || node.type === 'topic') {
+			graphQuery = node.label;
+			await searchEntity();
+		}
+	}
+
+	function graphSearchInDocuments(label: string) {
+		pageMode = 'search';
+		query = label;
+		searched = true;
+		doSearch();
+	}
+
+	function viewInGraph(entityQuery: string) {
+		pageMode = 'graph';
+		graphQuery = entityQuery;
+		searchEntity();
+	}
+
+	async function loadFromGraphHistory(item: string) {
+		graphQuery = item;
+		await searchEntity();
+	}
 
 	async function doSearch() {
 		const raw = query.trim();
@@ -111,72 +175,34 @@
 		} catch { /* ignore */ }
 	}
 
-	async function handleCancel() {
-		if (!cancelConfirm) {
-			cancelConfirm = true;
-			cancelTimer = setTimeout(() => { cancelConfirm = false; }, 3000);
-			return;
-		}
-		if (cancelTimer) clearTimeout(cancelTimer);
-		cancelConfirm = false;
-		try {
-			const result = await cancelJobs();
-			addToast(`Cancelled ${result.cancelled} job${result.cancelled !== 1 ? 's' : ''}`, 'success');
-		} catch (e) {
-			addToast(`Cancel failed: ${e instanceof Error ? e.message : 'Unknown'}`, 'error');
-		}
-	}
-
-	async function handleReindex() {
-		if (!reindexConfirm) {
-			reindexConfirm = true;
-			reindexTimer = setTimeout(() => { reindexConfirm = false; }, 3000);
-			return;
-		}
-		if (reindexTimer) clearTimeout(reindexTimer);
-		reindexConfirm = false;
-		reindexing = true;
-		try {
-			const result = await reindex();
-			addToast(`Rebuilt search index — ${result.indexed} document${result.indexed !== 1 ? 's' : ''} indexed`, 'success');
-			await refreshFacets();
-		} catch (e) {
-			addToast(`Reindex failed: ${e instanceof Error ? e.message : 'Unknown'}`, 'error');
-		} finally {
-			reindexing = false;
-		}
-	}
-
 	function handleKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
+			if (pageMode === 'graph') pageMode = 'search';
 			searchBar?.focus();
 		}
 		if (e.key === 'Escape') {
-			if (drawerOpen) {
+			if (pageMode === 'graph' && graphSelectedNode) {
+				graphSelectedNode = null;
+			} else if (drawerOpen) {
 				closeDrawer();
 			} else if (selected && window.innerWidth >= 900) {
 				selected = null;
 			}
 		}
+		if (pageMode === 'graph' && e.key === 'Enter') {
+			const active = document.activeElement;
+			if (active && active.classList.contains('graph-input')) {
+				searchEntity();
+			}
+		}
 	}
 
-	/* Auto-expand queue when jobs are active */
 	$effect(() => {
-		if ($queueStatus.in_progress > 0) showQueue = true;
-	});
-
-	$effect(() => {
-		startPolling();
-		startHealthPolling();
 		connectEvents({ onComplete: refreshFacets });
 		refreshFacets();
 		return () => {
-			stopPolling();
-			stopHealthPolling();
 			disconnectEvents();
-			if (cancelTimer) clearTimeout(cancelTimer);
-			if (reindexTimer) clearTimeout(reindexTimer);
 		};
 	});
 </script>
@@ -184,371 +210,182 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="layout">
-	<!-- Sidebar: Slim Command Panel -->
-	<aside class="sidebar">
-		<div class="logo">
-			<div class="logo-icon">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="12" cy="12" r="3"/>
-					<path d="M2 12s4-8 10-8 10 8 10 8-4 8-10 8-10-8-10-8z"/>
-				</svg>
+	<Sidebar bind:pageMode onrefreshfacets={refreshFacets} />
+
+	{#if pageMode === 'search'}
+		<!-- Results Column -->
+		<main class="results-col">
+			<div class="search-bar-wrap">
+				<SearchBar bind:value={query} onsubmit={doSearch} bind:this={searchBar} />
 			</div>
-			hawk<span class="logo-accent">eye</span>
-		</div>
 
-		<InferenceBlock compact />
-
-		<nav class="sidebar-nav">
-			<a href="/" class="nav-tab active" aria-current="page">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-				</svg>
-				Search
-			</a>
-			<a href="/graph" class="nav-tab">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-					<path d="M8.59 13.51 15.42 17.49"/><path d="M15.41 6.51 8.59 10.49"/>
-				</svg>
-				Graph
-			</a>
-		</nav>
-
-		<div class="sidebar-divider"></div>
-
-		<!-- Infrastructure: collapsible -->
-		<button class="collapse-toggle" onclick={() => showHealth = !showHealth}>
-			<span class="collapse-label">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-				</svg>
-				Health
-			</span>
-			<span class="collapse-right">
-				{#if $healthSummary.total > 0}
-					<span
-						class="health-badge"
-						class:all-up={$healthSummary.worst === 'up'}
-						class:has-degraded={$healthSummary.worst === 'degraded'}
-						class:has-down={$healthSummary.worst === 'down'}
-					>{$healthSummary.up}/{$healthSummary.total}</span>
-				{/if}
-				<span class="toggle-chevron" class:open={showHealth}>
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="6 9 12 15 18 9"/>
-					</svg>
-				</span>
-			</span>
-		</button>
-		{#if showHealth}
-			<div class="collapsible-body">
-				<HealthPanel />
-			</div>
-		{/if}
-
-		<div class="sidebar-divider"></div>
-
-		<!-- Ingest: collapsible -->
-		<button class="collapse-toggle" onclick={() => showIngest = !showIngest}>
-			<span class="collapse-label">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-				</svg>
-				Ingest
-			</span>
-			<span class="toggle-chevron" class:open={showIngest}>
-				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="6 9 12 15 18 9"/>
-				</svg>
-			</span>
-		</button>
-		{#if showIngest}
-			<div class="collapsible-body">
-				<FileBrowser onfacetsrefresh={refreshFacets} />
-			</div>
-		{/if}
-
-		<div class="sidebar-divider"></div>
-
-		<!-- Queue: collapsible, auto-opens when active -->
-		<button class="collapse-toggle" onclick={() => showQueue = !showQueue}>
-			<span class="collapse-label">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-				</svg>
-				Queue
-			</span>
-			<span class="collapse-right">
-				{#if $queueStatus.in_progress > 0}
-					<span class="queue-badge">{$queueStatus.in_progress}</span>
-				{/if}
-				<span class="toggle-chevron" class:open={showQueue}>
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="6 9 12 15 18 9"/>
-					</svg>
-				</span>
-			</span>
-		</button>
-		{#if showQueue}
-			<div class="collapsible-body">
-				<QueueStats />
-				<button
-					class="btn btn--ghost"
-					class:confirm={cancelConfirm}
-					onclick={handleCancel}
-				>
-					{cancelConfirm ? 'Confirm cancel?' : 'Cancel queued jobs'}
-				</button>
-			</div>
-		{/if}
-
-		<div class="sidebar-divider"></div>
-
-		<button
-			class="btn--tool"
-			class:confirm={reindexConfirm}
-			class:running={reindexing}
-			onclick={handleReindex}
-			disabled={reindexing}
-		>
-			{#if reindexing}
-				<svg class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-				</svg>
-				Rebuilding…
-			{:else if reindexConfirm}
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-					<path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-					<path d="M16 16h5v5"/>
-				</svg>
-				Confirm rebuild?
-			{:else}
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-					<path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-					<path d="M16 16h5v5"/>
-				</svg>
-				Rebuild search index
-			{/if}
-		</button>
-	</aside>
-
-	<!-- Results Column -->
-	<main class="results-col">
-		<div class="search-bar-wrap">
-			<SearchBar bind:value={query} onsubmit={doSearch} bind:this={searchBar} />
-		</div>
-
-		{#if viewMode === 'search'}
-			<FacetExplorer
-				{facets}
-				{activeFilters}
-				onaddfilter={addFilter}
-				onremovefilter={removeFilter}
-			/>
-		{/if}
-
-		<div class="results-area">
 			{#if viewMode === 'search'}
-				{#if searching}
-					<div class="results-list">
-						{#each Array(5) as _, i}
-							<div class="skeleton sk-card" style:animation-delay="{i * 80}ms"></div>
+				<FacetExplorer
+					{facets}
+					{activeFilters}
+					onaddfilter={addFilter}
+					onremovefilter={removeFilter}
+				/>
+			{/if}
+
+			<div class="results-area">
+				{#if viewMode === 'search'}
+					{#if searching}
+						<div class="results-list">
+							{#each Array(5) as _, i}
+								<div class="skeleton sk-card" style:animation-delay="{i * 80}ms"></div>
+							{/each}
+						</div>
+					{:else if results.length > 0}
+						<div class="results-count">{results.length} result{results.length !== 1 ? 's' : ''}</div>
+						<div class="results-list">
+							{#each results as result, i (result.file)}
+								<ResultCard
+									{result}
+									active={selected?.file === result.file}
+									featured={i === 0}
+									index={i}
+									onclick={() => selectResult(result)}
+									ontagclick={addFilter}
+								/>
+							{/each}
+						</div>
+					{:else if searched}
+						<div class="placeholder">
+							<div class="placeholder-title">No results for "{query}"</div>
+						</div>
+					{/if}
+				{:else if viewMode === 'dashboard'}
+					<Dashboard {facets} ontagclick={addFilter} />
+				{:else}
+					<Onboarding onfacetsrefresh={refreshFacets} />
+				{/if}
+			</div>
+		</main>
+
+		<!-- Detail Panel (desktop) -->
+		<DetailPanel
+			{selected}
+			{results}
+			ontagclick={addFilter}
+			onselectresult={selectResult}
+			ongraphclick={viewInGraph}
+		/>
+	{:else}
+		<!-- Graph View -->
+		<div class="graph-area">
+			<header class="graph-header">
+				<div class="graph-title-row">
+					<h2 class="graph-title">Knowledge Graph</h2>
+					{#if graphData.nodes.length > 0}
+						<span class="graph-stats">{graphData.nodes.length} nodes / {graphData.edges.length} edges</span>
+					{/if}
+				</div>
+				<div class="graph-search-row">
+					<input
+						type="text"
+						bind:value={graphQuery}
+						placeholder="Search entity, tag, or topic…"
+						aria-label="Search knowledge graph"
+						class="graph-input"
+					/>
+					<button onclick={searchEntity} disabled={graphLoading || !graphQuery.trim()} class="graph-btn">
+						{graphLoading ? 'Loading…' : 'Explore'}
+					</button>
+				</div>
+				{#if graphHistory.length > 0}
+					<div class="graph-history">
+						{#each graphHistory as item}
+							<button class="history-chip" onclick={() => loadFromGraphHistory(item)}>{item}</button>
 						{/each}
-					</div>
-				{:else if results.length > 0}
-					<div class="results-count">{results.length} result{results.length !== 1 ? 's' : ''}</div>
-					<div class="results-list">
-						{#each results as result, i (result.file)}
-							<ResultCard
-								{result}
-								active={selected?.file === result.file}
-								featured={i === 0}
-								index={i}
-								onclick={() => selectResult(result)}
-								ontagclick={addFilter}
-							/>
-						{/each}
-					</div>
-				{:else if searched}
-					<div class="placeholder">
-						<div class="placeholder-title">No results for "{query}"</div>
 					</div>
 				{/if}
-			{:else if viewMode === 'dashboard'}
-				<Dashboard {facets} ontagclick={addFilter} />
-			{:else}
-				<Onboarding onfacetsrefresh={refreshFacets} />
-			{/if}
-		</div>
-	</main>
+			</header>
 
-	<!-- Detail Panel (desktop) -->
-	<DetailPanel
-		{selected}
-		{results}
-		ontagclick={addFilter}
-		onselectresult={selectResult}
-	/>
+			<div class="graph-content">
+				<div class="graph-body">
+					{#if graphData.nodes.length > 0}
+						<div class="canvas-wrap">
+							<GraphCanvas nodes={graphData.nodes} edges={graphData.edges} onNodeClick={handleGraphNodeClick} />
+						</div>
+					{:else if graphSearched && !graphLoading}
+						<div class="graph-empty">
+							<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+								stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+								<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+								<circle cx="18" cy="19" r="3"/><path d="M8.59 13.51 15.42 17.49"/>
+								<path d="M15.41 6.51 8.59 10.49"/>
+							</svg>
+							<p>No graph data found. Try searching for an entity that appears in your ingested documents.</p>
+						</div>
+					{:else if !graphSearched}
+						<div class="graph-empty">
+							<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+								stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+								<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+							</svg>
+							<p>Enter an entity name to explore its knowledge graph connections.</p>
+							<p class="graph-empty-hint">Entities, tags, and topics are extracted during document ingestion.</p>
+						</div>
+					{/if}
+				</div>
+
+				{#if graphSelectedNode}
+					<aside class="graph-detail">
+						<div class="node-detail-header">
+							<span class="node-type-badge" style:background={GRAPH_NODE_COLORS[graphSelectedNode.type] ?? '#6366f1'}>
+								{graphSelectedNode.type}
+							</span>
+							<button class="node-close" onclick={() => graphSelectedNode = null} aria-label="Close node detail">
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+									stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+								</svg>
+							</button>
+						</div>
+						<div class="node-detail-title">{graphSelectedNode.label}</div>
+						{#if graphSelectedNode.source_path}
+							<div class="node-detail-path">{graphSelectedNode.source_path}</div>
+						{/if}
+						<div class="node-actions">
+							{#if graphSelectedNode.type === 'entity'}
+								<button class="action-btn" onclick={() => { graphQuery = graphSelectedNode!.label; searchEntity(); }}>
+									Explore connections
+								</button>
+							{/if}
+							<button class="action-btn" onclick={() => graphSearchInDocuments(graphSelectedNode!.label)}>
+								Search in documents
+							</button>
+						</div>
+					</aside>
+				{/if}
+			</div>
+
+			<div class="graph-footer">
+				<div class="legend">
+					<span class="legend-item"><span class="legend-dot" style="background: #6366f1;"></span> Entity</span>
+					<span class="legend-item"><span class="legend-dot" style="background: #34d399;"></span> Document</span>
+					<span class="legend-item"><span class="legend-dot" style="background: #fbbf24;"></span> Tag</span>
+					<span class="legend-item"><span class="legend-dot" style="background: #f87171;"></span> Topic</span>
+				</div>
+				<span class="legend-hint">Click nodes to explore · Scroll to zoom · Drag to pan</span>
+			</div>
+		</div>
+	{/if}
 </div>
 
-<!-- Summary Drawer (mobile) -->
-<SummaryDrawer
-	result={drawerResult}
-	open={drawerOpen}
-	onclose={closeDrawer}
-	ontagclick={(tag) => { addFilter(tag); closeDrawer(); }}
-/>
+<!-- Summary Drawer (mobile, search mode only) -->
+{#if pageMode === 'search'}
+	<SummaryDrawer
+		result={drawerResult}
+		open={drawerOpen}
+		onclose={closeDrawer}
+		ontagclick={(tag) => { addFilter(tag); closeDrawer(); }}
+	/>
+{/if}
 
 <style>
 	.layout { display: flex; height: 100vh; overflow: hidden; }
-
-	/* ── Sidebar ── */
-	.sidebar {
-		width: var(--sidebar-w); flex-shrink: 0;
-		background: var(--surface); border-right: 1px solid var(--border-subtle);
-		padding: 16px 12px; display: flex; flex-direction: column; gap: 14px;
-		height: 100vh; overflow-y: auto; overflow-x: hidden;
-	}
-	.sidebar::-webkit-scrollbar { width: 3px; }
-	.sidebar::-webkit-scrollbar-track { background: transparent; }
-	.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-	@media (max-width: 900px) { .sidebar { display: none; } }
-
-	.logo {
-		font-size: 16px; font-weight: 800; letter-spacing: -0.04em;
-		color: var(--text); display: flex; align-items: center; gap: 7px;
-		padding-bottom: 2px;
-	}
-	.logo-icon {
-		width: 24px; height: 24px; border-radius: 7px;
-		background: var(--gradient-accent);
-		display: flex; align-items: center; justify-content: center;
-		font-size: 13px; color: #fff; flex-shrink: 0;
-	}
-	.logo-accent {
-		background: var(--gradient-accent);
-		-webkit-background-clip: text; -webkit-text-fill-color: transparent;
-		background-clip: text;
-	}
-
-	/* ── Nav Tabs ── */
-	.sidebar-nav {
-		display: flex; gap: 4px;
-	}
-	.nav-tab {
-		flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
-		padding: 7px 6px; border-radius: var(--r-sm);
-		background: transparent; border: 1px solid var(--border-subtle);
-		color: var(--text-3); font-size: 11px; font-weight: 600;
-		text-decoration: none; transition: all var(--duration-fast);
-		cursor: pointer;
-	}
-	.nav-tab:hover {
-		background: var(--surface-2); color: var(--text-2);
-		border-color: var(--border); text-decoration: none;
-	}
-	.nav-tab.active {
-		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.25);
-		color: var(--accent-hover);
-	}
-
-	/* ── Collapsible sections ── */
-	.collapse-toggle {
-		display: flex; align-items: center; justify-content: space-between;
-		width: 100%; padding: 0; background: none; border: none;
-		cursor: pointer; color: var(--text-3);
-	}
-	.collapse-toggle:hover { color: var(--text-2); }
-	.collapse-label {
-		font-size: 10px; font-weight: 600; text-transform: uppercase;
-		letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px;
-	}
-	.collapse-right {
-		display: flex; align-items: center; gap: 6px;
-	}
-	.toggle-chevron {
-		display: flex; align-items: center; justify-content: center;
-		transition: transform var(--duration-fast);
-		opacity: 0.5;
-	}
-	.toggle-chevron.open { transform: rotate(180deg); }
-	.queue-badge {
-		font-size: 10px; font-weight: 700; color: var(--accent-hover);
-		background: var(--accent-dim); border-radius: 99px;
-		padding: 1px 6px; font-family: var(--mono);
-		animation: pulse 2.5s ease-in-out infinite;
-	}
-	.health-badge {
-		font-size: 10px; font-weight: 700; border-radius: 99px;
-		padding: 1px 6px; font-family: var(--mono);
-		transition: background 0.3s, color 0.3s;
-	}
-	.health-badge.all-up {
-		color: var(--green); background: rgba(52, 211, 153, 0.1);
-	}
-	.health-badge.has-degraded {
-		color: var(--yellow); background: rgba(251, 191, 36, 0.1);
-		animation: pulse 2.5s ease-in-out infinite;
-	}
-	.health-badge.has-down {
-		color: var(--red); background: rgba(248, 113, 113, 0.1);
-		animation: pulse 2.5s ease-in-out infinite;
-	}
-
-	.collapsible-body {
-		animation: fadeInUp 0.2s ease both;
-	}
-
-	.sidebar-divider { height: 1px; background: var(--border-subtle); margin: 0; }
-
-	/* ── Buttons ── */
-	.btn--ghost {
-		width: 100%; background: transparent; border: 1px solid var(--border);
-		border-radius: var(--r-sm); color: var(--text-2); font-size: 11px;
-		padding: 5px 10px; margin-top: 6px; cursor: pointer;
-		transition: border-color 0.15s, color 0.15s, background 0.15s;
-		font-family: var(--font);
-	}
-	.btn--ghost:hover {
-		border-color: rgba(248, 113, 113, 0.4); color: var(--red);
-		background: rgba(248, 113, 113, 0.08);
-	}
-	.btn--ghost.confirm {
-		border-color: rgba(248, 113, 113, 0.5); color: var(--red);
-		background: rgba(248, 113, 113, 0.08);
-	}
-
-	/* ── Tool button ── */
-	.btn--tool {
-		width: 100%; display: flex; align-items: center; gap: 6px;
-		background: transparent; border: 1px solid var(--border-subtle);
-		border-radius: var(--r-sm); color: var(--text-3); font-size: 11px;
-		padding: 7px 10px; cursor: pointer; font-weight: 500;
-		transition: all var(--duration-fast); font-family: var(--font);
-	}
-	.btn--tool:hover {
-		border-color: rgba(99, 102, 241, 0.3); color: var(--accent-hover);
-		background: var(--accent-dim);
-	}
-	.btn--tool.confirm {
-		border-color: rgba(99, 102, 241, 0.4); color: var(--accent-hover);
-		background: var(--accent-dim);
-	}
-	.btn--tool.running {
-		border-color: rgba(99, 102, 241, 0.25); color: var(--accent);
-		background: var(--accent-dim); cursor: default;
-	}
-	.btn--tool:disabled { opacity: 0.7; }
-	.btn--tool .spin {
-		animation: spin 1s linear infinite;
-	}
-	@keyframes spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
-	}
 
 	/* ── Results Column ── */
 	.results-col {
@@ -587,5 +424,128 @@
 	}
 	.placeholder-title {
 		font-size: 15px; font-weight: 600; color: var(--text-2); letter-spacing: -0.01em;
+	}
+
+	/* ── Graph View ── */
+	.graph-area {
+		flex: 1; display: flex; flex-direction: column; overflow: hidden;
+		min-width: 0;
+	}
+
+	.graph-header {
+		padding: 16px 24px 12px;
+		border-bottom: 1px solid var(--border-subtle);
+		background: var(--bg);
+		flex-shrink: 0;
+	}
+	.graph-title-row {
+		display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px;
+	}
+	.graph-title {
+		font-size: 16px; font-weight: 700;
+		background: var(--gradient-accent);
+		-webkit-background-clip: text; -webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+	.graph-stats {
+		font-size: 11px; color: var(--text-3); font-family: var(--mono);
+		background: var(--surface-2); border: 1px solid var(--border);
+		border-radius: var(--r-sm); padding: 2px 8px;
+	}
+
+	.graph-search-row { display: flex; gap: 8px; }
+	.graph-input {
+		flex: 1; padding: 9px 14px; background: var(--surface);
+		border: 1px solid var(--border); border-radius: var(--r-sm);
+		color: var(--text); font-size: 14px; outline: none;
+		transition: border-color 0.15s; font-family: var(--font);
+	}
+	.graph-input:focus { border-color: var(--accent); }
+	.graph-input::placeholder { color: var(--text-3); }
+	.graph-btn {
+		padding: 9px 18px; background: var(--gradient-accent);
+		color: #fff; border: none; border-radius: var(--r-sm);
+		font-weight: 600; font-size: 13px; cursor: pointer;
+		transition: opacity 0.15s; font-family: var(--font);
+	}
+	.graph-btn:hover { opacity: 0.9; }
+	.graph-btn:disabled { opacity: 0.5; cursor: default; }
+
+	.graph-history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+	.history-chip {
+		padding: 3px 10px; background: var(--accent-dim);
+		border: 1px solid var(--border); border-radius: 99px;
+		color: var(--text-2); font-size: 11px; cursor: pointer;
+		transition: all 0.15s; font-family: var(--font);
+	}
+	.history-chip:hover {
+		background: var(--accent-glow); color: var(--accent-hover);
+		border-color: var(--accent);
+	}
+
+	.graph-content { flex: 1; display: flex; overflow: hidden; }
+	.graph-body { flex: 1; position: relative; overflow: hidden; }
+	.canvas-wrap { width: 100%; height: 100%; }
+
+	.graph-empty {
+		display: flex; flex-direction: column; align-items: center;
+		justify-content: center; height: 100%; color: var(--text-3);
+		text-align: center; gap: 12px;
+	}
+	.graph-empty p { font-size: 14px; max-width: 400px; }
+	.graph-empty-hint { font-size: 12px; opacity: 0.7; }
+
+	.graph-detail {
+		width: 260px; flex-shrink: 0;
+		background: var(--surface); border-left: 1px solid var(--border);
+		padding: 18px; overflow-y: auto;
+		animation: fadeInUp 0.2s ease both;
+		display: flex; flex-direction: column; gap: 14px;
+	}
+	.node-detail-header {
+		display: flex; align-items: center; justify-content: space-between;
+	}
+	.node-type-badge {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.08em; padding: 3px 10px; border-radius: 4px; color: #fff;
+	}
+	.node-close {
+		background: var(--surface-2); border: 1px solid var(--border);
+		border-radius: var(--r-sm); width: 26px; height: 26px;
+		display: flex; align-items: center; justify-content: center;
+		cursor: pointer; color: var(--text-3);
+		transition: background var(--duration-fast), color var(--duration-fast);
+	}
+	.node-close:hover { background: var(--border); color: var(--text); }
+	.node-detail-title {
+		font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.3;
+	}
+	.node-detail-path {
+		font-size: 11px; font-family: var(--mono); color: var(--text-3); word-break: break-all;
+	}
+	.node-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+	.action-btn {
+		display: block; width: 100%; padding: 8px 12px;
+		background: var(--surface-2); border: 1px solid var(--border);
+		border-radius: var(--r-sm); color: var(--text-2);
+		font-size: 12px; font-weight: 600; text-align: center;
+		cursor: pointer; text-decoration: none; font-family: var(--font);
+		transition: all var(--duration-fast);
+	}
+	.action-btn:hover {
+		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.3);
+		color: var(--accent-hover);
+	}
+
+	.graph-footer {
+		display: flex; align-items: center; gap: 16px;
+		padding: 10px 24px; border-top: 1px solid var(--border-subtle);
+		background: var(--surface); flex-shrink: 0;
+	}
+	.legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-2); }
+	.legend-item { display: flex; align-items: center; gap: 5px; }
+	.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+	.legend-hint {
+		margin-left: auto; font-size: 11px; color: var(--text-3); font-family: var(--mono);
 	}
 </style>

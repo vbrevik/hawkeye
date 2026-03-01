@@ -26,33 +26,7 @@ pub async fn handle_reindex(
         .await
         .map_err(AppError::internal)?;
 
-    let summaries: Vec<Summary> = rows
-        .iter()
-        .map(|row| {
-            let source = std::path::Path::new(&row.source_path)
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| row.source_path.clone());
-            let tags: Vec<String> = serde_json::from_value(row.tags.clone()).unwrap_or_default();
-            let entities: Vec<String> =
-                serde_json::from_value(row.entities.clone()).unwrap_or_default();
-            let topics: Vec<String> =
-                serde_json::from_value(row.topics.clone()).unwrap_or_default();
-
-            Summary {
-                source,
-                source_hash: row.source_hash.clone(),
-                created_at: row.created_at,
-                tldr: row.tldr.clone(),
-                title: row.title.clone(),
-                tags,
-                entities,
-                topics,
-                relationships: vec![],
-                word_count: row.word_count as u64,
-            }
-        })
-        .collect();
+    let summaries: Vec<Summary> = rows.into_iter().map(|row| row.into_summary()).collect();
 
     let mut indexer = state.indexer.lock().await;
     indexer.clear_all().map_err(AppError::internal)?;

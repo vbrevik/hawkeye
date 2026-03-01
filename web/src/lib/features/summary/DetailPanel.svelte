@@ -6,12 +6,14 @@
 		selected,
 		results = [],
 		ontagclick,
-		onselectresult
+		onselectresult,
+		ongraphclick,
 	}: {
 		selected: SearchResult | null;
 		results?: SearchResult[];
 		ontagclick: (tag: string) => void;
 		onselectresult: (r: SearchResult) => void;
+		ongraphclick: (query: string) => void;
 	} = $props();
 
 	let summary = $state<Summary | null>(null);
@@ -90,7 +92,7 @@
 		<div class="detail-body">
 			<div class="detail-header-row">
 				<div class="detail-title">{displayData.title}</div>
-				<a href="/graph" class="view-graph-btn" title="View in Knowledge Graph">
+				<button class="view-graph-btn" title="View in Knowledge Graph" onclick={() => ongraphclick(displayData.title)}>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
 						stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
@@ -98,7 +100,7 @@
 						<path d="M15.41 6.51 8.59 10.49"/>
 					</svg>
 					Graph
-				</a>
+				</button>
 			</div>
 			<div class="detail-tldr">{displayData.tldr}</div>
 

@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: ./scripts/start_mlx.sh [MODEL [DRAFT_MODEL]]
 #
 # Starts mlx-lm serve on port 7701.
-# Default model: mlx-community/Qwen2.5-7B-Instruct-4bit
+# Default model: mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit
 #
 # Speculative decoding (EAGLE-3):
 #   Pass a draft model as 2nd arg or set MLX_DRAFT_MODEL env var.
@@ -19,7 +19,7 @@ set -euo pipefail
 #
 # Set MLX_PORT env var to override port (default 7701).
 
-MODEL="${1:-mlx-community/Qwen2.5-7B-Instruct-4bit}"
+MODEL="${1:-mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit}"
 DRAFT_MODEL="${2:-${MLX_DRAFT_MODEL:-}}"
 PORT="${MLX_PORT:-7701}"
 

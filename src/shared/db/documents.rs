@@ -1,4 +1,4 @@
-use crate::features::summary::Relationship;
+use crate::features::summary::{Relationship, Summary};
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -199,6 +199,28 @@ pub struct FullSummaryRow {
     pub relationships: serde_json::Value,
     pub word_count: i64,
     pub created_at: DateTime<Utc>,
+}
+
+impl FullSummaryRow {
+    pub fn into_summary(self) -> Summary {
+        let source = std::path::Path::new(&self.source_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or(self.source_path.clone());
+
+        Summary {
+            source,
+            source_hash: self.source_hash,
+            created_at: self.created_at,
+            tldr: self.tldr,
+            title: self.title,
+            tags: serde_json::from_value(self.tags).unwrap_or_default(),
+            entities: serde_json::from_value(self.entities).unwrap_or_default(),
+            topics: serde_json::from_value(self.topics).unwrap_or_default(),
+            relationships: serde_json::from_value(self.relationships).unwrap_or_default(),
+            word_count: self.word_count as u64,
+        }
+    }
 }
 
 pub async fn get_all_summaries(
