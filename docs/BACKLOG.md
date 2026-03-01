@@ -98,7 +98,7 @@ Hawkeye is a fully functional local knowledge platform:
 | **Storage** | ✅ | Postgres (documents, summaries, relationships), Tantivy index |
 | **Ops** | ✅ | Health checks, cancel in-flight jobs, graceful shutdown, optional docker teardown |
 | **UI** | ✅ | Inline HTML (search, browse, ingest, facets, detail panel, drawer) |
-| **Semantic Search** | 🟡 | Embedding sidecar ✅ + Milvus vector store (Task 7) |
+| **Semantic Search** | ✅ | Embedding sidecar (bge-m3) + Milvus vector store + `/search/semantic` endpoint |
 | **Frontend** | 🔜 | SvelteKit migration with multi-page routing (Task 11) |
 | **Knowledge Graph** | 🔜 | Neo4j with extracted relationships + graph viz page (Task 8) |
 | **Real-Time** | 🔜 | SSE events for live ingest progress in SvelteKit UI (Task 9) |
@@ -138,24 +138,16 @@ Hawkeye is a fully functional local knowledge platform:
 
 ---
 
-#### Task 7 — Milvus vector store + semantic search
+#### Task 7 — Milvus vector store + semantic search ✅
 **Priority:** Medium | **Effort:** Medium
 
-**GOAL:** After ingest, each document's embedded chunks are stored in Milvus collection `doc_chunks`. `GET /search/semantic?q=...` embeds the query, searches Milvus, and returns the top-10 nearest-neighbor documents (deduplicated by doc_id).
-
-**CONSTRAINTS:**
-- Use Milvus REST API v2 via `reqwest` — no additional crate
-- Collection schema: `doc_id` (varchar), `chunk_index` (int32), `workspace_id` (varchar), `vector` (float_vector dim=1024)
-- Create collection on startup if it doesn't exist (idempotent)
-- Search uses L2 metric, over-fetches to account for deduplication
-- If Milvus is unavailable, `/search/semantic` returns empty results with an error log (not 500)
-
-**FAILURE CONDITIONS:**
-- `doc_chunks` collection not created on startup
-- Vectors not inserted after ingest
-- Duplicate doc_ids in search results
-- `/search/semantic` returns 500 when Milvus is down
-- Vector dimension ≠ 1024
+- `src/milvus/client.rs` — `MilvusClient` with `ensure_collection()`, `insert_chunks()`, `delete_by_doc_id()`, `search_similar()` (dedup by doc_id) + 5 mock-server unit tests
+- `src/api/semantic.rs` — `GET /search/semantic?q=...&limit=N` handler (embed → Milvus search → Postgres enrichment)
+- `src/queue/worker.rs` — embed content + store vectors in Milvus after Postgres write (non-critical: warns on failure, doesn't block ingest)
+- `src/queue/consumer.rs` — passes embed + milvus clients through to workers
+- `src/api/mod.rs` — `AppState` gains `embed: Arc<EmbedClient>` + `milvus: Arc<MilvusClient>`
+- `src/db/documents.rs` — `DocSummaryBrief` + `get_doc_summaries_by_ids()` batch query
+- 39 unit tests pass, clippy clean
 
 ---
 
@@ -374,10 +366,10 @@ Task 3 (Replace .summary.json)         ✅
 Task 6 (Embedding sidecar)             ✅
   │
   ▼
-Task 7 (Milvus semantic search)        ← CURRENT
+Task 7 (Milvus semantic search)        ✅
   │
   ▼
-🔧 Task R1 (Backend refactor)           ← feature-based architecture
+🔧 Task R1 (Backend refactor)           ← CURRENT
   │
   ▼
 🔍 Tech Debt Audit 1                    ← clean backend before frontend
@@ -398,8 +390,8 @@ Task 11 (SvelteKit frontend)
 Task 10 (Workspaces + API keys)
 ```
 
-**Completed:** Tasks 1–6 + cancel/shutdown/docker teardown
-**In progress:** Task 7 (Milvus vector store + semantic search)
+**Completed:** Tasks 1–7 + cancel/shutdown/docker teardown
+**In progress:** —
 **Key additions:** Refactor task (R1) and 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
 **Parallelizable:** Tasks 8 and 9 can be done in parallel after SvelteKit migration.
 
@@ -567,8 +559,8 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Task 7 — Milvus vector store + semantic search
-**Next Task:** Task R1 — Backend refactor to feature-based architecture
+**Current Task:** Task R1 — Backend refactor to feature-based architecture
+**Next Task:** Tech Debt Audit 1 → Task 11 (SvelteKit frontend)
 **Then:** Task 11 — SvelteKit frontend migration (before Tasks 8-9)
 **Recently Completed:** Cancel endpoint, graceful shutdown (SIGINT/SIGTERM/API), optional docker teardown
 **Blockers:** None

@@ -487,12 +487,25 @@ const HTML: &str = r##"<!DOCTYPE html>
     .toast {
       pointer-events: auto;
       background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 10px 16px;
+      border-radius: var(--r); padding: 10px 16px 12px;
       font-size: 13px; color: var(--text-2); line-height: 1.4;
       display: flex; align-items: center; gap: 10px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.4);
       animation: toastIn 0.3s ease both;
       max-width: 340px; cursor: pointer;
+      position: relative; overflow: hidden;
+    }
+    .toast-progress {
+      position: absolute; bottom: 0; left: 0; height: 2px;
+      border-radius: 0 0 var(--r) var(--r);
+      animation: toastCountdown 4s linear forwards;
+    }
+    .toast--success .toast-progress { background: var(--green); opacity: 0.5; }
+    .toast--error .toast-progress { background: var(--red); opacity: 0.5; }
+    .toast--info .toast-progress { background: var(--accent-hover); opacity: 0.5; }
+    @keyframes toastCountdown {
+      from { width: 100%; }
+      to { width: 0%; }
     }
     .toast.removing { animation: toastOut 0.25s ease both; }
     .toast-icon { flex-shrink: 0; font-size: 14px; }
@@ -669,7 +682,9 @@ const HTML: &str = r##"<!DOCTYPE html>
     icon.textContent = icons[type] || icons.info;
     const msg = document.createElement("span");
     msg.textContent = message;
-    toast.append(icon, msg);
+    const bar = document.createElement("div");
+    bar.className = "toast-progress";
+    toast.append(icon, msg, bar);
     container.appendChild(toast);
     function dismiss() {
       if (toast.classList.contains("removing")) return;
