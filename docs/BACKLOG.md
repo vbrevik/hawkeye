@@ -379,7 +379,7 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 | Low | 16 modules lack unit tests | All are thin handlers, orchestration, or DB queries — covered by 14 integration tests |
 | Low | `GraphCanvas.svelte` 340 lines | Complex canvas rendering — decomposition optional |
 | Low | 3 silent `catch` in frontend polling | Correct for transient failures |
-| Low | Possibly unused Cargo deps | Run `cargo machete` to verify |
+| ~~Low~~ | ~~Possibly unused Cargo deps~~ | ✅ **Resolved** — `cargo machete` found 0 unused deps |
 
 ##### Health Score
 
