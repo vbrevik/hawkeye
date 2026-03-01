@@ -16,6 +16,13 @@ pub struct QueueStatus {
     pub errors: Vec<FileError>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct CancelResult {
+    pub cancelled: usize,
+    pub already_completed: usize,
+    pub already_failed: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileError {
     pub file: String,
@@ -177,6 +184,34 @@ impl RedisQueue {
             failed,
             in_progress,
             errors,
+        })
+    }
+
+    pub async fn cancel(&self) -> Result<CancelResult, Box<dyn std::error::Error + Send + Sync>> {
+        let mut conn = self.pool.get().await?;
+
+        let total: usize = conn.get(&self.total_key).await.unwrap_or(0);
+        let completed: usize = conn.get(&self.completed_key).await.unwrap_or(0);
+        let failed: usize = conn.get(&self.failed_key).await.unwrap_or(0);
+        let cancelled = total.saturating_sub(completed).saturating_sub(failed);
+
+        // Delete the stream to discard all unprocessed messages
+        redis::cmd("DEL")
+            .arg(&self.stream_key)
+            .query_async::<redis::Value>(&mut *conn)
+            .await?;
+
+        // Adjust total so in_progress becomes 0
+        let _: () = conn.set(&self.total_key, completed + failed).await?;
+
+        // Recreate consumer group for future ingests
+        drop(conn);
+        self.ensure_group().await?;
+
+        Ok(CancelResult {
+            cancelled,
+            already_completed: completed,
+            already_failed: failed,
         })
     }
 

@@ -14,7 +14,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use uuid::Uuid;
 
 const TEST_POSTGRES_URL: &str = "postgresql://hawkeye:hawkeye@localhost:5433/hawkeye";
@@ -99,12 +99,14 @@ async fn test_full_pipeline() {
     queue.publish_files(&scan.to_process).await.unwrap();
 
     // 5. Spawn consumers and wait for completion
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
     let handles = spawn_consumers(
         queue.clone(),
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
         2,
+        shutdown_rx,
     );
 
     wait_for_completion(&queue, 5, Duration::from_secs(30)).await;
@@ -189,12 +191,14 @@ async fn test_skip_logic_on_rerun() {
     assert_eq!(scan1.to_process.len(), 3);
     queue.publish_files(&scan1.to_process).await.unwrap();
 
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
     let handles = spawn_consumers(
         queue.clone(),
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
         2,
+        shutdown_rx,
     );
 
     wait_for_completion(&queue, 3, Duration::from_secs(30)).await;
@@ -224,6 +228,96 @@ async fn test_skip_logic_on_rerun() {
     assert_eq!(scan2.skipped, 3);
 
     // Cleanup
+    queue.cleanup().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_cancel_ingestion() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..10 {
+        std::fs::write(
+            dir.path().join(format!("cancel{}.md", i)),
+            format!("Cancel test document {}.", i),
+        )
+        .unwrap();
+    }
+
+    // Use a mock LLM that's slow so we can cancel mid-flight
+    async fn slow_llm_handler() -> Json<serde_json::Value> {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        Json(json!({
+            "choices": [{
+                "message": {
+                    "content": "{\"tldr\": \"Cancelled test.\", \"title\": \"Cancel Doc\", \"tags\": [], \"entities\": [], \"topics\": [], \"relationships\": []}"
+                }
+            }]
+        }))
+    }
+
+    let mock_app = Router::new().route("/v1/chat/completions", post(slow_llm_handler));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mock_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let mlx_url = format!("http://{}", mock_addr);
+    let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
+    sqlx::migrate!().run(&pg_pool).await.unwrap();
+
+    let redis_pool = create_redis_pool();
+    let ws_id = Uuid::new_v4();
+    let queue = RedisQueue::new(redis_pool.clone(), ws_id);
+    queue.ensure_group().await.unwrap();
+
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    // Publish all 10 files
+    let scan = scan_directory(dir.path(), &HashMap::new()).unwrap();
+    assert_eq!(scan.to_process.len(), 10);
+    queue.publish_files(&scan.to_process).await.unwrap();
+
+    // Spawn 1 slow consumer (each file takes 2s)
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+    let handles = spawn_consumers(
+        queue.clone(),
+        inference.clone(),
+        indexer.clone(),
+        pg_pool.clone(),
+        1,
+        shutdown_rx,
+    );
+
+    // Wait briefly for at least 1 to start processing
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Cancel the remaining jobs
+    let result = queue.cancel().await.unwrap();
+    assert!(
+        result.cancelled > 0,
+        "Expected some jobs to be cancelled, got {}",
+        result.cancelled
+    );
+
+    // After cancel, in_progress should be 0
+    let status = queue.read_status().await.unwrap();
+    assert_eq!(status.in_progress, 0, "in_progress should be 0 after cancel");
+
+    // A new ingest should work after cancel (consumer group was recreated)
+    let dir2 = tempfile::tempdir().unwrap();
+    std::fs::write(dir2.path().join("post_cancel.md"), "After cancel.").unwrap();
+    let scan2 = scan_directory(dir2.path(), &HashMap::new()).unwrap();
+    assert_eq!(scan2.to_process.len(), 1);
+    queue.publish_files(&scan2.to_process).await.unwrap();
+
+    // Cleanup
+    for h in handles {
+        h.abort();
+    }
     queue.cleanup().await.unwrap();
 }
 

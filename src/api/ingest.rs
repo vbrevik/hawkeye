@@ -1,6 +1,6 @@
 use crate::api::AppState;
 use crate::db::documents::get_source_hashes;
-use crate::queue::stream::RedisQueue;
+use crate::queue::stream::{CancelResult, RedisQueue};
 use crate::scanner::files::scan_directory;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -60,4 +60,23 @@ pub async fn handle_ingest(
         files_queued: queued,
         files_skipped: skipped,
     }))
+}
+
+pub async fn handle_cancel(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CancelResult>, (StatusCode, String)> {
+    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    let result = queue
+        .cancel()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    tracing::info!(
+        cancelled = result.cancelled,
+        completed = result.already_completed,
+        failed = result.already_failed,
+        "ingestion cancelled"
+    );
+
+    Ok(Json(result))
 }

@@ -18,8 +18,8 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 
 - `src/main.rs` — Axum server entrypoint, route definitions
 - `src/config.rs` — CLI args via `clap::Parser` (AppConfig)
-- `src/api/` — Route handlers: ui, ingest, search, status, summary, tags, browse, health
-- `src/api/mod.rs` — `AppState` struct (config, redis_pool, inference client, indexer, pg_pool)
+- `src/api/` — Route handlers: ui, ingest, cancel, shutdown, search, status, summary, tags, browse, health
+- `src/api/mod.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, shutdown watch channel, shutdown_docker flag)
 - `src/inference/` — MLX sidecar HTTP client
 - `src/queue/` — Redis Streams job queue (stream.rs: RedisQueue, consumer.rs: consumer loop, worker.rs: file processor)
 - `src/scanner/` — Filesystem `.md` file discovery
@@ -59,10 +59,14 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
 - Model variants: 4-bit (~13GB RAM) vs 8-bit (~22GB) — pass model arg to start script: `./scripts/start_mlx.sh InferenceIllusionist/gpt-oss-20b-MLX-4bit`
-- Running server holds Tantivy index lock — kill existing process before starting a new instance
+- Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
+- `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
+- `POST /cancel` vs `POST /shutdown`: cancel discards **queued jobs** but keeps the server running; shutdown stops the **entire server process**
+- Running server holds Tantivy index lock — use `POST /shutdown` or `kill` (SIGTERM) instead of `kill -9` to release it cleanly
 - LLM prompt extracts relationships in the same call as summaries — `LlmOutput.relationships` uses `#[serde(default)]` so missing field defaults to `[]`
 - `RelationType` enum uses `#[serde(other)]` on `Other` variant to handle unknown relationship types from the LLM gracefully
 - Redis consumer group is created idempotently on startup (`BUSYGROUP` error is swallowed) — no manual setup needed
+- `POST /cancel` clears unprocessed jobs from the Redis Stream, adjusts counters so `in_progress` becomes 0, and recreates the consumer group for future ingests — in-flight jobs still finish but won't affect status
 - Queue status (`GET /status`) is derived from Redis counters (`hawkeye:stats:{ws}:total/completed/failed`), not in-memory state
 - `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`

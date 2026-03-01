@@ -4,7 +4,7 @@ use crate::queue::worker;
 use crate::search::indexer::SearchIndexer;
 use sqlx::PgPool;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use tokio::task::JoinHandle;
 
 pub fn spawn_consumers(
@@ -13,6 +13,7 @@ pub fn spawn_consumers(
     indexer: Arc<Mutex<SearchIndexer>>,
     pool: PgPool,
     count: usize,
+    shutdown_rx: watch::Receiver<bool>,
 ) -> Vec<JoinHandle<()>> {
     (0..count)
         .map(|i| {
@@ -20,10 +21,11 @@ pub fn spawn_consumers(
             let c = client.clone();
             let idx = indexer.clone();
             let p = pool.clone();
+            let rx = shutdown_rx.clone();
             let name = format!("worker-{}", i);
 
             tokio::spawn(async move {
-                consumer_loop(&q, &c, &idx, &p, &name).await;
+                consumer_loop(&q, &c, &idx, &p, &name, rx).await;
             })
         })
         .collect()
@@ -35,31 +37,40 @@ async fn consumer_loop(
     indexer: &Arc<Mutex<SearchIndexer>>,
     pool: &PgPool,
     consumer_name: &str,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) {
     loop {
-        match queue.read_next(consumer_name).await {
-            Ok(Some((msg_id, file))) => {
-                let file_path = file.path.display().to_string();
-                match worker::process_file(&file, client, indexer, pool).await {
-                    Ok(()) => {
-                        if let Err(e) = queue.ack_completed(&msg_id).await {
-                            tracing::error!(error = %e, "failed to ack completed");
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                tracing::info!(consumer = consumer_name, "shutting down");
+                break;
+            }
+            result = queue.read_next(consumer_name) => {
+                match result {
+                    Ok(Some((msg_id, file))) => {
+                        let file_path = file.path.display().to_string();
+                        match worker::process_file(&file, client, indexer, pool).await {
+                            Ok(()) => {
+                                if let Err(e) = queue.ack_completed(&msg_id).await {
+                                    tracing::error!(error = %e, "failed to ack completed");
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(file = %file_path, error = %e, "processing failed");
+                                if let Err(ae) =
+                                    queue.ack_failed(&msg_id, &file_path, &e.to_string()).await
+                                {
+                                    tracing::error!(error = %ae, "failed to ack failed");
+                                }
+                            }
                         }
                     }
+                    Ok(None) => {}
                     Err(e) => {
-                        tracing::error!(file = %file_path, error = %e, "processing failed");
-                        if let Err(ae) =
-                            queue.ack_failed(&msg_id, &file_path, &e.to_string()).await
-                        {
-                            tracing::error!(error = %ae, "failed to ack failed");
-                        }
+                        tracing::error!(error = %e, consumer = consumer_name, "stream read error");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }
                 }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::error!(error = %e, consumer = consumer_name, "stream read error");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     }
