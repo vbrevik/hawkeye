@@ -188,7 +188,7 @@ async fn main() {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(shutdown_rx))
         .await
-        .unwrap();
+        .expect("server exited with error");
 
     tracing::info!("server stopped, waiting for consumers");
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;

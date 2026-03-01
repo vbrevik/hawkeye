@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-#[allow(dead_code)] // fields populated by sqlx::FromRow, read in integration tests
+#[allow(dead_code)] // fields populated by sqlx::FromRow
 pub struct DocumentRow {
     pub id: Uuid,
     pub workspace_id: Uuid,
@@ -16,7 +16,7 @@ pub struct DocumentRow {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-#[allow(dead_code)] // fields populated by sqlx::FromRow, read in integration tests
+#[allow(dead_code)] // fields populated by sqlx::FromRow
 pub struct SummaryRow {
     pub id: Uuid,
     pub document_id: Uuid,
@@ -113,10 +113,14 @@ pub async fn insert_summary(
     pool: &PgPool,
     input: &InsertSummary<'_>,
 ) -> Result<SummaryRow, sqlx::Error> {
-    let tags_json = serde_json::to_value(input.tags).unwrap_or_default();
-    let entities_json = serde_json::to_value(input.entities).unwrap_or_default();
-    let topics_json = serde_json::to_value(input.topics).unwrap_or_default();
-    let relationships_json = serde_json::to_value(input.relationships).unwrap_or_default();
+    let tags_json = serde_json::to_value(input.tags)
+        .map_err(|e| sqlx::Error::Protocol(format!("failed to serialize tags: {e}")))?;
+    let entities_json = serde_json::to_value(input.entities)
+        .map_err(|e| sqlx::Error::Protocol(format!("failed to serialize entities: {e}")))?;
+    let topics_json = serde_json::to_value(input.topics)
+        .map_err(|e| sqlx::Error::Protocol(format!("failed to serialize topics: {e}")))?;
+    let relationships_json = serde_json::to_value(input.relationships)
+        .map_err(|e| sqlx::Error::Protocol(format!("failed to serialize relationships: {e}")))?;
 
     sqlx::query_as::<_, SummaryRow>(
         r#"
