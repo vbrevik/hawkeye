@@ -2,7 +2,7 @@ mod features;
 mod shared;
 
 use shared::state::AppState;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{middleware, Router};
 use tower_http::services::{ServeDir, ServeFile};
 use clap::Parser;
@@ -152,6 +152,7 @@ async fn main() {
 
     let protected_workspace_routes = Router::new()
         .route("/workspaces/{id}/docs", get(features::auth::handler::handle_list_workspace_docs))
+        .route("/api-keys/{id}", delete(features::auth::handler::handle_revoke_api_key))
         .route_layer(middleware::from_fn_with_state(state.clone(), features::auth::middleware::require_auth));
 
     let app = Router::new()

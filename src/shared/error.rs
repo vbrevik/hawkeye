@@ -12,6 +12,7 @@ struct ErrorBody {
 pub enum AppError {
     BadRequest(String),
     Unauthorized(String),
+    #[allow(dead_code)]
     Forbidden(String),
     NotFound(String),
     Internal(String),
@@ -26,6 +27,7 @@ impl AppError {
         Self::Unauthorized(msg.to_string())
     }
 
+    #[allow(dead_code)]
     pub fn forbidden(msg: impl std::fmt::Display) -> Self {
         Self::Forbidden(msg.to_string())
     }

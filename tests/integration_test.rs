@@ -1,9 +1,9 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use axum::{routing::{get, post}, Json, Router};
+use axum::{routing::{delete, get, post}, Json, Router};
 use clap::Parser;
 use hawkeye::{
-    features::auth::handler::{handle_create_workspace, handle_create_api_key, handle_list_workspace_docs},
+    features::auth::handler::{handle_create_workspace, handle_create_api_key, handle_list_workspace_docs, handle_revoke_api_key},
     features::auth::middleware::require_auth,
     features::browse::handler::handle_browse,
     features::events::{
@@ -405,6 +405,20 @@ async fn post_json(app: Router, uri: &str, body: serde_json::Value) -> (StatusCo
 /// Helper: send a GET request with an Authorization Bearer header.
 async fn get_with_auth(app: Router, uri: &str, token: &str) -> (StatusCode, Vec<u8>) {
     let req = Request::builder()
+        .uri(uri)
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+    (status, body)
+}
+
+/// Helper: send a DELETE request with an Authorization Bearer header.
+async fn delete_with_auth(app: Router, uri: &str, token: &str) -> (StatusCode, Vec<u8>) {
+    let req = Request::builder()
+        .method("DELETE")
         .uri(uri)
         .header("authorization", format!("Bearer {}", token))
         .body(Body::empty())
@@ -876,6 +890,7 @@ async fn test_workspace_and_auth() {
 
     let protected = Router::new()
         .route("/workspaces/{id}/docs", get(handle_list_workspace_docs))
+        .route("/api-keys/{id}", delete(handle_revoke_api_key))
         .route_layer(axum::middleware::from_fn_with_state(state.clone(), require_auth));
 
     let app = Router::new()
@@ -974,6 +989,62 @@ async fn test_workspace_and_auth() {
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // 11. DELETE /api-keys/:id without auth → 401
+    let key_id = key_resp["id"].as_str().unwrap();
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api-keys/{}", key_id))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // 12. DELETE /api-keys/:id for non-existent key → 404
+    let (status, _) = delete_with_auth(
+        app.clone(),
+        &format!("/api-keys/{}", Uuid::new_v4()),
+        &api_key,
+    ).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // 13. Create a second API key, then revoke the first using the second
+    let (status, body) = post_json(app.clone(), "/api-keys", json!({
+        "workspace_id": ws_id_str,
+        "label": "second-key"
+    })).await;
+    assert_eq!(status, StatusCode::OK);
+    let second_key_resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let second_api_key = second_key_resp["key"].as_str().unwrap().to_string();
+
+    // 14. Revoke the first key using the second key → 200
+    let (status, body) = delete_with_auth(
+        app.clone(),
+        &format!("/api-keys/{}", key_id),
+        &second_api_key,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    let revoke_resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(revoke_resp["id"], key_id);
+    assert!(revoke_resp["revoked_at"].as_str().is_some());
+
+    // 15. Revoke again (idempotent) → 200
+    let (status, _) = delete_with_auth(
+        app.clone(),
+        &format!("/api-keys/{}", key_id),
+        &second_api_key,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 16. Using the revoked key for auth → 401 "revoked"
+    let (status, body) = get_with_auth(
+        app.clone(),
+        &format!("/workspaces/{}/docs", ws_id),
+        &api_key,
+    ).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let err: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(err["error"].as_str().unwrap().contains("revoked"));
 
     // Cleanup
     sqlx::query("DELETE FROM documents WHERE workspace_id = $1")

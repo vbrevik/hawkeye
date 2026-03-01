@@ -21,8 +21,33 @@
 	--mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Fira Code', monospace;
 	--r: 10px;
 	--r-sm: 6px;
-	--sidebar-w: 240px;
+	--sidebar-w: 200px;
 	--drawer-w: 360px;
+
+	/* Facet semantic colors */
+	--tag-bg: rgba(99, 102, 241, 0.10);
+	--tag-border: rgba(99, 102, 241, 0.20);
+	--tag-text: #818cf8;
+	--topic-bg: rgba(56, 189, 248, 0.08);
+	--topic-border: rgba(56, 189, 248, 0.18);
+	--topic-text: #7dd3fc;
+	--entity-bg: rgba(251, 191, 36, 0.08);
+	--entity-border: rgba(251, 191, 36, 0.18);
+	--entity-text: #fcd34d;
+
+	/* Spacing scale */
+	--sp-1: 4px;
+	--sp-2: 8px;
+	--sp-3: 12px;
+	--sp-4: 16px;
+	--sp-5: 20px;
+	--sp-6: 24px;
+	--sp-8: 32px;
+
+	/* Transitions */
+	--ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+	--duration-fast: 150ms;
+	--duration-normal: 200ms;
 }
 
 body {
@@ -59,4 +84,18 @@ input { font-family: var(--font); }
 @keyframes skeleton-sweep {
 	0% { background-position: 200% 0; }
 	100% { background-position: -200% 0; }
+}
+
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+	from { opacity: 0; transform: scale(0.95); }
+	to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 1200px) {
+	:root { --sidebar-w: 180px; }
 }

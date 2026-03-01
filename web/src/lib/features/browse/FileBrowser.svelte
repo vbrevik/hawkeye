@@ -79,7 +79,7 @@
 		{/if}
 	</div>
 	<div class="browser-md-count" class:none={mdCount === 0}>
-		{mdCount === 0 ? 'No .md files here' : `${mdCount} .md file${mdCount !== 1 ? 's' : ''}`}
+		{mdCount === 0 ? 'No .md files here -- try navigating deeper' : `${mdCount} .md file${mdCount !== 1 ? 's' : ''} found`}
 	</div>
 	<button class="btn" onclick={doIngest} disabled={ingesting || !browserPath}>
 		{ingesting ? 'Ingesting…' : 'Ingest this directory'}

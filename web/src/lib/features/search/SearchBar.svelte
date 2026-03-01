@@ -12,13 +12,19 @@
 		}
 	}
 
+	function clearInput() {
+		value = '';
+		onsubmit();
+		inputEl?.focus();
+	}
+
 	export function focus() {
 		inputEl?.focus();
 		inputEl?.select();
 	}
 </script>
 
-<div class="search-bar" class:focused={false}>
+<div class="search-bar">
 	<svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 		<circle cx="11" cy="11" r="8"/>
 		<path d="m21 21-4.35-4.35"/>
@@ -27,13 +33,21 @@
 		class="search-input"
 		bind:this={inputEl}
 		bind:value
-		placeholder="Search summaries…"
+		placeholder="Search summaries..."
 		aria-label="Search summaries"
 		autocomplete="off"
 		spellcheck="false"
 		{onkeydown}
 		oninput={() => onsubmit()}
 	/>
+	{#if value}
+		<button class="search-clear" onclick={clearInput} aria-label="Clear search">
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+				stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+			</svg>
+		</button>
+	{/if}
 	<span class="search-kbd">⌘K</span>
 </div>
 
@@ -56,6 +70,13 @@
 		font-size: 16px; font-weight: 400; outline: none;
 	}
 	.search-input::placeholder { color: var(--text-3); font-weight: 400; }
+	.search-clear {
+		background: none; border: none; color: var(--text-3); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		padding: 4px; border-radius: 4px; flex-shrink: 0;
+		transition: color var(--duration-fast), background var(--duration-fast);
+	}
+	.search-clear:hover { color: var(--text); background: var(--surface-2); }
 	.search-kbd {
 		background: var(--surface-2); border: 1px solid var(--border);
 		border-radius: 5px; color: var(--text-3); font-size: 10px;

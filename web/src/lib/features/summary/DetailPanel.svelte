@@ -47,6 +47,17 @@
 		}).slice(0, 5);
 	}
 
+	function sharedFacetCount(a: SearchResult, b: SearchResult): { tags: number; entities: number } {
+		const aTags = new Set((a.tags || '').split(' ').filter(Boolean));
+		const aEntities = new Set((a.entities || '').split(' ').filter(Boolean));
+		const bTags = (b.tags || '').split(' ').filter(Boolean);
+		const bEntities = (b.entities || '').split(' ').filter(Boolean);
+		return {
+			tags: bTags.filter(t => aTags.has(t)).length,
+			entities: bEntities.filter(e => aEntities.has(e)).length,
+		};
+	}
+
 	const related = $derived(selected ? computeRelated(selected) : []);
 	const displayData = $derived(summary ?? (selected ? {
 		title: selected.title || selected.file,
@@ -77,16 +88,27 @@
 		</div>
 	{:else if displayData}
 		<div class="detail-body">
-			<div class="detail-title">{displayData.title}</div>
+			<div class="detail-header-row">
+				<div class="detail-title">{displayData.title}</div>
+				<a href="/graph" class="view-graph-btn" title="View in Knowledge Graph">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+						stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+						<circle cx="18" cy="19" r="3"/><path d="M8.59 13.51 15.42 17.49"/>
+						<path d="M15.41 6.51 8.59 10.49"/>
+					</svg>
+					Graph
+				</a>
+			</div>
 			<div class="detail-tldr">{displayData.tldr}</div>
 
 			<div class="detail-section">
 				<div class="detail-slabel">Tags</div>
 				<div class="detail-chips">
 					{#each displayData.tags as tag}
-						<button class="detail-chip clickable" onclick={() => ontagclick(tag)}>#{tag}</button>
+						<button class="detail-chip clickable tag-styled" onclick={() => ontagclick(tag)}>#{tag}</button>
 					{:else}
-						<span class="empty">—</span>
+						<span class="empty">--</span>
 					{/each}
 				</div>
 			</div>
@@ -95,9 +117,9 @@
 				<div class="detail-slabel">Topics</div>
 				<div class="detail-chips">
 					{#each displayData.topics as topic}
-						<span class="detail-chip">{topic}</span>
+						<button class="detail-chip clickable topic-styled" onclick={() => ontagclick(topic)}>{topic}</button>
 					{:else}
-						<span class="empty">—</span>
+						<span class="empty">--</span>
 					{/each}
 				</div>
 			</div>
@@ -106,25 +128,34 @@
 				<div class="detail-slabel">Entities</div>
 				<div class="detail-chips">
 					{#each displayData.entities as entity}
-						<span class="detail-chip">{entity}</span>
+						<button class="detail-chip clickable entity-styled" onclick={() => ontagclick(entity)}>{entity}</button>
 					{:else}
-						<span class="empty">—</span>
+						<span class="empty">--</span>
 					{/each}
 				</div>
 			</div>
 
 			<div class="detail-meta">
 				<div><strong>{(displayData.word_count || 0).toLocaleString()}</strong> words</div>
-				<div>Indexed {displayData.created_at ? new Date(displayData.created_at).toLocaleDateString() : '—'}</div>
+				<div>Indexed {displayData.created_at ? new Date(displayData.created_at).toLocaleDateString() : '--'}</div>
 			</div>
 
 			{#if related.length > 0}
-				<div class="related-divider">Related</div>
+				<div class="related-divider">Related Documents</div>
 				<div class="related-list">
 					{#each related as rel}
+						{@const shared = sharedFacetCount(selected!, rel)}
 						<button class="related-card" onclick={() => onselectresult(rel)}>
 							<div class="related-title">{rel.title || rel.file}</div>
 							<div class="related-tldr">{rel.tldr}</div>
+							<div class="shared-info">
+								{#if shared.tags > 0}
+									<span class="shared-badge tag-accent">{shared.tags} shared tag{shared.tags !== 1 ? 's' : ''}</span>
+								{/if}
+								{#if shared.entities > 0}
+									<span class="shared-badge entity-accent">{shared.entities} shared entit{shared.entities !== 1 ? 'ies' : 'y'}</span>
+								{/if}
+							</div>
 						</button>
 					{/each}
 				</div>
@@ -162,10 +193,26 @@
 		padding: 24px; display: flex; flex-direction: column; gap: 20px;
 		animation: fadeInUp 0.3s ease both;
 	}
+	.detail-header-row {
+		display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+	}
 	.detail-title {
 		font-size: 19px; font-weight: 800; color: var(--text);
 		line-height: 1.3; letter-spacing: -0.025em;
 	}
+	.view-graph-btn {
+		display: flex; align-items: center; gap: 4px;
+		font-size: 11px; font-weight: 600; color: var(--text-3);
+		background: var(--surface-2); border: 1px solid var(--border);
+		border-radius: var(--r-sm); padding: 4px 10px;
+		text-decoration: none; flex-shrink: 0;
+		transition: all var(--duration-fast);
+	}
+	.view-graph-btn:hover {
+		color: var(--accent-hover); border-color: rgba(99, 102, 241, 0.3);
+		background: var(--accent-dim); text-decoration: none;
+	}
+
 	.detail-tldr { font-size: 14px; color: var(--text-2); line-height: 1.7; }
 
 	.detail-section { display: flex; flex-direction: column; gap: 6px; }
@@ -175,16 +222,22 @@
 	}
 	.detail-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 	.detail-chip {
-		background: var(--surface-2); border-radius: 5px; color: var(--text-2);
-		font-size: 12px; padding: 3px 9px; font-weight: 500;
-		border: none; font-family: var(--font);
+		border-radius: 5px; font-size: 12px; padding: 3px 9px;
+		font-weight: 500; border: none; font-family: var(--font);
 	}
 	.detail-chip.clickable {
 		cursor: pointer; transition: background 0.15s, color 0.15s, transform 0.1s;
 	}
-	.detail-chip.clickable:hover {
-		background: var(--accent-dim); color: var(--accent-hover); transform: scale(1.03);
-	}
+	.detail-chip.clickable:hover { transform: scale(1.03); }
+
+	/* Facet-colored chip variants */
+	.tag-styled { background: var(--tag-bg); color: var(--tag-text); }
+	.tag-styled:hover { background: rgba(99, 102, 241, 0.18); }
+	.topic-styled { background: var(--topic-bg); color: var(--topic-text); }
+	.topic-styled:hover { background: rgba(56, 189, 248, 0.15); }
+	.entity-styled { background: var(--entity-bg); color: var(--entity-text); }
+	.entity-styled:hover { background: rgba(251, 191, 36, 0.15); }
+
 	.empty { font-size: 12px; color: var(--text-3); }
 
 	.detail-meta {
@@ -215,4 +268,10 @@
 		display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 		overflow: hidden; line-height: 1.5;
 	}
+	.shared-info { display: flex; gap: 6px; margin-top: 6px; }
+	.shared-badge {
+		font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500;
+	}
+	.shared-badge.tag-accent { background: var(--tag-bg); color: var(--tag-text); }
+	.shared-badge.entity-accent { background: var(--entity-bg); color: var(--entity-text); }
 </style>

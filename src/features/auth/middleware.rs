@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct ValidatedApiKey {
+    #[allow(dead_code)]
     pub key_id: Uuid,
     pub workspace_id: Uuid,
 }

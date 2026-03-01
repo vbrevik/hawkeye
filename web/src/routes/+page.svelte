@@ -2,18 +2,20 @@
 	import type { SearchResult, Facets } from '$lib/api/types';
 	import { search, fetchFacets } from '$lib/api/search';
 	import { cancelJobs } from '$lib/api/ingest';
-	import { startPolling, stopPolling } from '$lib/stores/status';
+	import { startPolling, stopPolling, queueStatus } from '$lib/stores/status';
 	import { connectEvents, disconnectEvents } from '$lib/features/events/useEvents';
 	import { addToast } from '$lib/stores/toast';
 
 	import SearchBar from '$lib/features/search/SearchBar.svelte';
 	import ResultCard from '$lib/features/search/ResultCard.svelte';
 	import FileBrowser from '$lib/features/browse/FileBrowser.svelte';
-	import FacetCloud from '$lib/features/facets/FacetCloud.svelte';
 	import InferenceBlock from '$lib/features/status/InferenceBlock.svelte';
 	import QueueStats from '$lib/features/status/QueueStats.svelte';
 	import DetailPanel from '$lib/features/summary/DetailPanel.svelte';
 	import SummaryDrawer from '$lib/features/summary/SummaryDrawer.svelte';
+	import Dashboard from '$lib/features/dashboard/Dashboard.svelte';
+	import Onboarding from '$lib/features/dashboard/Onboarding.svelte';
+	import FacetExplorer from '$lib/features/facets/FacetExplorer.svelte';
 
 	let searchBar: SearchBar;
 	let query = $state('');
@@ -28,8 +30,20 @@
 	let drawerOpen = $state(false);
 	let drawerResult = $state<SearchResult | null>(null);
 
+	type ViewMode = 'onboarding' | 'dashboard' | 'search';
+	const totalFacets = $derived(facets.tags.length + facets.topics.length + facets.entities.length);
+	const viewMode: ViewMode = $derived(
+		(searched || query.trim() || activeFilters.length > 0) ? 'search'
+			: totalFacets > 0 ? 'dashboard'
+			: 'onboarding'
+	);
+
 	let cancelConfirm = $state(false);
 	let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/* Sidebar collapsible state */
+	let showIngest = $state(false);
+	let showQueue = $state(false);
 
 	async function doSearch() {
 		const raw = query.trim();
@@ -61,6 +75,7 @@
 	function addFilter(tag: string) {
 		if (activeFilters.includes(tag)) return;
 		activeFilters = [...activeFilters, tag];
+		searched = true;
 		doSearch();
 	}
 
@@ -119,6 +134,11 @@
 		}
 	}
 
+	/* Auto-expand queue when jobs are active */
+	$effect(() => {
+		if ($queueStatus.in_progress > 0) showQueue = true;
+	});
+
 	$effect(() => {
 		startPolling();
 		connectEvents({ onComplete: refreshFacets });
@@ -134,7 +154,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="layout">
-	<!-- Sidebar -->
+	<!-- Sidebar: Slim Command Panel -->
 	<aside class="sidebar">
 		<div class="logo">
 			<div class="logo-icon">
@@ -146,82 +166,77 @@
 			hawk<span class="logo-accent">eye</span>
 		</div>
 
-		<div>
-			<div class="section-label"><span class="section-label-icon">⚡</span> Inference</div>
-			<InferenceBlock />
-		</div>
+		<InferenceBlock compact />
+
+		<nav class="sidebar-nav">
+			<a href="/" class="nav-tab active" aria-current="page">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+				</svg>
+				Search
+			</a>
+			<a href="/graph" class="nav-tab">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+					<path d="M8.59 13.51 15.42 17.49"/><path d="M15.41 6.51 8.59 10.49"/>
+				</svg>
+				Graph
+			</a>
+		</nav>
 
 		<div class="sidebar-divider"></div>
 
-		<a href="/graph" class="nav-link">
-			<span class="nav-link-icon">🕸️</span> Knowledge Graph
-			<span class="nav-link-arrow">→</span>
-		</a>
+		<!-- Ingest: collapsible -->
+		<button class="collapse-toggle" onclick={() => showIngest = !showIngest}>
+			<span class="collapse-label">
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+				</svg>
+				Ingest
+			</span>
+			<span class="toggle-chevron" class:open={showIngest}>
+				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<polyline points="6 9 12 15 18 9"/>
+				</svg>
+			</span>
+		</button>
+		{#if showIngest}
+			<div class="collapsible-body">
+				<FileBrowser onfacetsrefresh={refreshFacets} />
+			</div>
+		{/if}
 
 		<div class="sidebar-divider"></div>
 
-		<div>
-			<div class="section-label"><span class="section-label-icon">📂</span> Ingest</div>
-			<FileBrowser onfacetsrefresh={refreshFacets} />
-		</div>
-
-		<div class="sidebar-divider"></div>
-
-		<div>
-			<div class="section-label"><span class="section-label-icon">📊</span> Queue</div>
-			<QueueStats />
-			<button
-				class="btn btn--ghost"
-				class:confirm={cancelConfirm}
-				onclick={handleCancel}
-			>
-				{cancelConfirm ? 'Confirm cancel?' : 'Cancel queued jobs'}
-			</button>
-		</div>
-
-		<div class="sidebar-divider"></div>
-
-		<div>
-			<div class="section-label"><span class="section-label-icon">🏷</span> Tags</div>
-			<FacetCloud
-				entries={facets.tags}
-				prefix="#"
-				emptyText="Ingest documents to see tags"
-				variant="tag"
-				onclick={addFilter}
-			/>
-		</div>
-
-		<div>
-			<div class="section-label"><span class="section-label-icon">💡</span> Topics</div>
-			<FacetCloud
-				entries={facets.topics}
-				emptyText="—"
-				variant="topic"
-				onclick={addFilter}
-			/>
-		</div>
-
-		<div>
-			<div class="section-label"><span class="section-label-icon">👤</span> Entities</div>
-			<FacetCloud
-				entries={facets.entities}
-				emptyText="—"
-				variant="entity"
-				onclick={addFilter}
-			/>
-		</div>
-
-		{#if activeFilters.length > 0}
-			<div>
-				<div class="section-label">Active Filters</div>
-				<div class="filter-chips">
-					{#each activeFilters as tag}
-						<button class="chip chip--active" onclick={() => removeFilter(tag)}>
-							#{tag} <span class="x">✕</span>
-						</button>
-					{/each}
-				</div>
+		<!-- Queue: collapsible, auto-opens when active -->
+		<button class="collapse-toggle" onclick={() => showQueue = !showQueue}>
+			<span class="collapse-label">
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+				</svg>
+				Queue
+			</span>
+			<span class="collapse-right">
+				{#if $queueStatus.in_progress > 0}
+					<span class="queue-badge">{$queueStatus.in_progress}</span>
+				{/if}
+				<span class="toggle-chevron" class:open={showQueue}>
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="6 9 12 15 18 9"/>
+					</svg>
+				</span>
+			</span>
+		</button>
+		{#if showQueue}
+			<div class="collapsible-body">
+				<QueueStats />
+				<button
+					class="btn btn--ghost"
+					class:confirm={cancelConfirm}
+					onclick={handleCancel}
+				>
+					{cancelConfirm ? 'Confirm cancel?' : 'Cancel queued jobs'}
+				</button>
 			</div>
 		{/if}
 	</aside>
@@ -232,46 +247,46 @@
 			<SearchBar bind:value={query} onsubmit={doSearch} bind:this={searchBar} />
 		</div>
 
+		{#if viewMode === 'search'}
+			<FacetExplorer
+				{facets}
+				{activeFilters}
+				onaddfilter={addFilter}
+				onremovefilter={removeFilter}
+			/>
+		{/if}
+
 		<div class="results-area">
-			{#if searching}
-				<div class="results-list">
-					{#each Array(5) as _, i}
-						<div class="skeleton sk-card" style:animation-delay="{i * 80}ms"></div>
-					{/each}
-				</div>
-			{:else if results.length > 0}
-				<div class="results-count">{results.length} result{results.length !== 1 ? 's' : ''}</div>
-				<div class="results-list">
-					{#each results as result, i (result.file)}
-						<ResultCard
-							{result}
-							active={selected?.file === result.file}
-							featured={i === 0}
-							index={i}
-							onclick={() => selectResult(result)}
-							ontagclick={addFilter}
-						/>
-					{/each}
-				</div>
-			{:else if searched}
-				<div class="placeholder">
-					<div class="placeholder-title">No results for "{query}"</div>
-				</div>
+			{#if viewMode === 'search'}
+				{#if searching}
+					<div class="results-list">
+						{#each Array(5) as _, i}
+							<div class="skeleton sk-card" style:animation-delay="{i * 80}ms"></div>
+						{/each}
+					</div>
+				{:else if results.length > 0}
+					<div class="results-count">{results.length} result{results.length !== 1 ? 's' : ''}</div>
+					<div class="results-list">
+						{#each results as result, i (result.file)}
+							<ResultCard
+								{result}
+								active={selected?.file === result.file}
+								featured={i === 0}
+								index={i}
+								onclick={() => selectResult(result)}
+								ontagclick={addFilter}
+							/>
+						{/each}
+					</div>
+				{:else if searched}
+					<div class="placeholder">
+						<div class="placeholder-title">No results for "{query}"</div>
+					</div>
+				{/if}
+			{:else if viewMode === 'dashboard'}
+				<Dashboard {facets} ontagclick={addFilter} />
 			{:else}
-				<div class="placeholder">
-					<div class="placeholder-icon">
-						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="position:relative;z-index:1;opacity:0.5">
-							<circle cx="11" cy="11" r="8"/>
-							<path d="m21 21-4.35-4.35"/>
-						</svg>
-					</div>
-					<div class="placeholder-title">Index markdown. Surface insights.</div>
-					<div class="placeholder-hint">
-						<span>⌘K to focus</span>
-						<span>·</span>
-						<span>ESC to clear</span>
-					</div>
-				</div>
+				<Onboarding onfacetsrefresh={refreshFacets} />
 			{/if}
 		</div>
 	</main>
@@ -300,7 +315,7 @@
 	.sidebar {
 		width: var(--sidebar-w); flex-shrink: 0;
 		background: var(--surface); border-right: 1px solid var(--border-subtle);
-		padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;
+		padding: 16px 12px; display: flex; flex-direction: column; gap: 14px;
 		height: 100vh; overflow-y: auto; overflow-x: hidden;
 	}
 	.sidebar::-webkit-scrollbar { width: 3px; }
@@ -310,15 +325,15 @@
 	@media (max-width: 900px) { .sidebar { display: none; } }
 
 	.logo {
-		font-size: 18px; font-weight: 800; letter-spacing: -0.04em;
-		color: var(--text); display: flex; align-items: center; gap: 8px;
-		padding-bottom: 4px;
+		font-size: 16px; font-weight: 800; letter-spacing: -0.04em;
+		color: var(--text); display: flex; align-items: center; gap: 7px;
+		padding-bottom: 2px;
 	}
 	.logo-icon {
-		width: 26px; height: 26px; border-radius: 8px;
+		width: 24px; height: 24px; border-radius: 7px;
 		background: var(--gradient-accent);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 14px; color: #fff; flex-shrink: 0;
+		font-size: 13px; color: #fff; flex-shrink: 0;
 	}
 	.logo-accent {
 		background: var(--gradient-accent);
@@ -326,30 +341,59 @@
 		background-clip: text;
 	}
 
-	.section-label {
-		font-size: 10px; font-weight: 600; text-transform: uppercase;
-		letter-spacing: 0.1em; color: var(--text-3); margin-bottom: 8px;
-		display: flex; align-items: center; gap: 6px;
+	/* ── Nav Tabs ── */
+	.sidebar-nav {
+		display: flex; gap: 4px;
 	}
-	.section-label-icon { font-size: 11px; opacity: 0.7; }
-
-	.sidebar-divider { height: 1px; background: var(--border-subtle); margin: 2px 0; }
-
-	.nav-link {
-		display: flex; align-items: center; gap: 8px;
-		padding: 8px 10px; border-radius: var(--r-sm);
-		background: var(--surface-2); border: 1px solid var(--border);
-		color: var(--text-2); font-size: 12px; font-weight: 600;
-		text-decoration: none; transition: all 0.15s;
+	.nav-tab {
+		flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+		padding: 7px 6px; border-radius: var(--r-sm);
+		background: transparent; border: 1px solid var(--border-subtle);
+		color: var(--text-3); font-size: 11px; font-weight: 600;
+		text-decoration: none; transition: all var(--duration-fast);
 		cursor: pointer;
 	}
-	.nav-link:hover {
-		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.3);
-		color: var(--accent-hover); text-decoration: none;
+	.nav-tab:hover {
+		background: var(--surface-2); color: var(--text-2);
+		border-color: var(--border); text-decoration: none;
 	}
-	.nav-link-icon { font-size: 13px; }
-	.nav-link-arrow { margin-left: auto; font-size: 11px; opacity: 0.4; transition: opacity 0.15s; }
-	.nav-link:hover .nav-link-arrow { opacity: 0.8; }
+	.nav-tab.active {
+		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.25);
+		color: var(--accent-hover);
+	}
+
+	/* ── Collapsible sections ── */
+	.collapse-toggle {
+		display: flex; align-items: center; justify-content: space-between;
+		width: 100%; padding: 0; background: none; border: none;
+		cursor: pointer; color: var(--text-3);
+	}
+	.collapse-toggle:hover { color: var(--text-2); }
+	.collapse-label {
+		font-size: 10px; font-weight: 600; text-transform: uppercase;
+		letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px;
+	}
+	.collapse-right {
+		display: flex; align-items: center; gap: 6px;
+	}
+	.toggle-chevron {
+		display: flex; align-items: center; justify-content: center;
+		transition: transform var(--duration-fast);
+		opacity: 0.5;
+	}
+	.toggle-chevron.open { transform: rotate(180deg); }
+	.queue-badge {
+		font-size: 10px; font-weight: 700; color: var(--accent-hover);
+		background: var(--accent-dim); border-radius: 99px;
+		padding: 1px 6px; font-family: var(--mono);
+		animation: pulse 2.5s ease-in-out infinite;
+	}
+
+	.collapsible-body {
+		animation: fadeInUp 0.2s ease both;
+	}
+
+	.sidebar-divider { height: 1px; background: var(--border-subtle); margin: 0; }
 
 	/* ── Buttons ── */
 	.btn--ghost {
@@ -367,22 +411,6 @@
 		border-color: rgba(248, 113, 113, 0.5); color: var(--red);
 		background: rgba(248, 113, 113, 0.08);
 	}
-
-	/* ── Filter Chips ── */
-	.filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-	.chip {
-		display: inline-flex; align-items: center; gap: 3px;
-		border-radius: 4px; font-size: 11px; padding: 2px 8px;
-		cursor: pointer; transition: transform 0.1s, background 0.15s;
-		font-weight: 500; border: 1px solid; font-family: var(--font);
-	}
-	.chip:hover { transform: scale(1.03); }
-	.chip--active {
-		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.3);
-		color: var(--accent-hover);
-	}
-	.chip--active:hover { background: rgba(99, 102, 241, 0.2); }
-	.x { font-size: 9px; margin-left: 2px; opacity: 0.5; }
 
 	/* ── Results Column ── */
 	.results-col {
@@ -419,28 +447,7 @@
 		display: flex; flex-direction: column; align-items: center;
 		justify-content: center; padding: 100px 0; gap: 16px; color: var(--text-3);
 	}
-	.placeholder-icon {
-		width: 64px; height: 64px; border-radius: 20px;
-		background: var(--surface); border: 1px solid var(--border);
-		display: flex; align-items: center; justify-content: center;
-		position: relative; overflow: hidden;
-	}
-	.placeholder-icon::before {
-		content: ""; position: absolute; inset: -20px;
-		background: radial-gradient(circle at 50% 50%, var(--accent-glow), transparent 70%);
-		animation: orbDrift 6s ease-in-out infinite;
-	}
-	@keyframes orbDrift {
-		0%, 100% { transform: translate(0, 0) scale(1); }
-		33% { transform: translate(4px, -6px) scale(1.1); }
-		66% { transform: translate(-4px, 4px) scale(0.95); }
-	}
 	.placeholder-title {
 		font-size: 15px; font-weight: 600; color: var(--text-2); letter-spacing: -0.01em;
 	}
-	.placeholder-hint {
-		font-size: 11px; color: var(--text-3); font-family: var(--mono);
-		display: flex; gap: 12px; margin-top: 4px;
-	}
-	.placeholder-hint span { opacity: 0.6; }
 </style>

@@ -102,6 +102,40 @@ pub async fn handle_create_api_key(
 }
 
 #[derive(Serialize)]
+pub struct RevokeApiKeyResponse {
+    pub id: Uuid,
+    pub revoked_at: DateTime<Utc>,
+}
+
+pub async fn handle_revoke_api_key(
+    State(state): State<Arc<AppState>>,
+    Extension(api_key): Extension<ValidatedApiKey>,
+    Path(key_id): Path<Uuid>,
+) -> Result<Json<RevokeApiKeyResponse>, AppError> {
+    let target = workspaces::find_api_key_by_id(&state.pg_pool, key_id)
+        .await
+        .map_err(AppError::internal)?
+        .ok_or_else(|| AppError::not_found("API key not found"))?;
+
+    if target.workspace_id != api_key.workspace_id {
+        return Err(AppError::unauthorized(
+            "API key does not belong to this workspace",
+        ));
+    }
+
+    tracing::info!(key_id = %key_id, "revoking API key");
+
+    let revoked = workspaces::revoke_api_key(&state.pg_pool, key_id)
+        .await
+        .map_err(AppError::internal)?;
+
+    Ok(Json(RevokeApiKeyResponse {
+        id: revoked.id,
+        revoked_at: revoked.revoked_at.expect("revoked_at should be set"),
+    }))
+}
+
+#[derive(Serialize)]
 pub struct WorkspaceDocsResponse {
     pub workspace_id: Uuid,
     pub documents: Vec<workspaces::WorkspaceDocRow>,

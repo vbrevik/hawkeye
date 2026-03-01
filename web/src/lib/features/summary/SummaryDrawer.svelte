@@ -89,7 +89,7 @@
 					<div class="drawer-slabel">Entities</div>
 					<div class="drawer-chips">
 						{#each entities as entity}
-							<span class="drawer-chip static">{entity}</span>
+							<button class="drawer-chip entity-styled" onclick={() => ontagclick(entity)}>{entity}</button>
 						{/each}
 					</div>
 				</div>
@@ -100,7 +100,7 @@
 					<div class="drawer-slabel">Topics</div>
 					<div class="drawer-chips">
 						{#each topics as topic}
-							<span class="drawer-chip static">{topic}</span>
+							<button class="drawer-chip topic-styled" onclick={() => ontagclick(topic)}>{topic}</button>
 						{/each}
 					</div>
 				</div>
@@ -167,8 +167,10 @@
 		transition: background 0.15s, color 0.15s; border: none; font-family: var(--font);
 	}
 	.drawer-chip:hover { background: var(--accent-dim); color: var(--accent-hover); }
-	.drawer-chip.static { cursor: default; }
-	.drawer-chip.static:hover { background: var(--surface-2); color: var(--text-2); }
+	.drawer-chip.topic-styled { background: var(--topic-bg); color: var(--topic-text); }
+	.drawer-chip.topic-styled:hover { background: rgba(56, 189, 248, 0.15); }
+	.drawer-chip.entity-styled { background: var(--entity-bg); color: var(--entity-text); }
+	.drawer-chip.entity-styled:hover { background: rgba(251, 191, 36, 0.15); }
 
 	.drawer-meta {
 		display: flex; gap: 16px; padding-top: 8px; border-top: 1px solid var(--border);

@@ -45,6 +45,9 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `features/graph/handler.rs` — `GET /graph/entity/{name}` entity graph traversal, `GET /graph/document/{id}` document graph
 - `features/events/handler.rs` — `GET /events` SSE stream for real-time ingest progress (per-client Redis pub/sub, 15s keepalive)
 - `features/events/publisher.rs` — `DocumentEvent` (Done/Failed) pub/sub for worker → SSE bridge via Redis PUBLISH
+- `features/auth/handler.rs` — `POST /workspaces`, `POST /api-keys`, `DELETE /api-keys/{id}`, `GET /workspaces/{id}/docs`
+- `features/auth/middleware.rs` — `require_auth` layer: Bearer token extraction → SHA-256 hash → `api_keys` table lookup → reject 401 if not found/revoked
+- `features/auth/keys.rs` — `generate_api_key()` (`hke_` prefix + 32 alphanumeric), `hash_api_key()` (SHA-256)
 
 ### Shared modules (`src/shared/`)
 
@@ -55,7 +58,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
 - `shared/shutdown.rs` — `POST /shutdown` graceful server shutdown (optional `?docker=true`)
 - `shared/status.rs` — `GET /status` queue progress, `GET /mlx-status` sidecar health
-- `shared/error.rs` — Unified `AppError` enum (BadRequest/NotFound/Internal) implementing `IntoResponse`
+- `shared/db/workspaces.rs` — Workspace + API key CRUD (create, find by hash/id, revoke, list docs)
+- `shared/error.rs` — Unified `AppError` enum (BadRequest/NotFound/Internal/Unauthorized/Forbidden) implementing `IntoResponse`
 
 ### Scripts
 
@@ -102,6 +106,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Config via clap derive macros, all flags have defaults
 - Handlers are `async fn` with Axum extractors (`State`, `Query`, `Json`, `Path`)
 - Feature-based module layout: `src/features/` for domain logic, `src/shared/` for cross-cutting concerns
+- Auth: Bearer token with `hke_` prefix, SHA-256 hashed in DB. Bootstrap endpoints (`POST /workspaces`, `POST /api-keys`) are unauthenticated; protected endpoints use `require_auth` middleware layer. Public endpoints (`/search`, `/ingest`, `/status`, `/browse`) remain unauthenticated
 - SHA-256 content hashing to skip unchanged files on re-ingest (hashes checked against Postgres, not filesystem)
 - Redis Streams for durable job queue — consumer group `hawkeye-workers`, stream key `hawkeye:jobs:{workspace_id}`
 - Redis pub/sub for real-time SSE events — channel `hawkeye:events:{workspace_id}`, published after ack_completed/ack_failed
@@ -135,6 +140,11 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
 - `POST /cancel` vs `POST /shutdown`: cancel discards **queued jobs** but keeps the server running; shutdown stops the **entire server process**
+- API key format: `hke_` + 32 alphanumeric chars (e.g. `hke_a1b2c3...`). Key is shown once on creation, stored as SHA-256 hash in `api_keys` table. Use `setAuthToken()` in the frontend to persist in browser
+- `DELETE /api-keys/:id` is idempotent — uses `COALESCE(revoked_at, now())` so re-revoking doesn't change the timestamp
+- Auth middleware checks `revoked_at IS NULL` — revoked keys get a clear "API key has been revoked" 401 message
+- `POST /workspaces` and `POST /api-keys` are intentionally unauthenticated (bootstrap flow) — don't add auth middleware to these routes
+- Settings page (`/settings`) uses a 3-step wizard: create workspace → generate key → view docs. The API key is stored in the browser via `setAuthToken()` and included in subsequent `apiFetch()` calls
 - Running server holds Tantivy index lock — use `POST /shutdown` or `kill` (SIGTERM) instead of `kill -9` to release it cleanly
 - LLM prompt extracts relationships in the same call as summaries — `LlmOutput.relationships` uses `#[serde(default)]` so missing field defaults to `[]`
 - `RelationType` enum uses `#[serde(other)]` on `Other` variant to handle unknown relationship types from the LLM gracefully

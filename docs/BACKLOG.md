@@ -102,7 +102,7 @@ Hawkeye is a fully functional local knowledge platform:
 | **Frontend** | ✅ | SvelteKit app (search, browse, ingest, facets, detail panel, mobile drawer) |
 | **Knowledge Graph** | ✅ | Neo4j with extracted relationships + graph viz page (Task 8) |
 | **Real-Time** | ✅ | SSE events for live ingest progress via Redis pub/sub (Task 9) |
-| **Multi-Tenant** | 🔜 | Workspaces + API keys (Task 10) |
+| **Multi-Tenant** | ✅ | Workspaces + API keys + revoke (Task 10) |
 
 ---
 
@@ -261,7 +261,7 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 
 ### Phase 5: Multi-Tenant
 
-#### Task 10 — Workspaces + API key management
+#### Task 10 — Workspaces + API key management ✅
 **Priority:** Low | **Effort:** Medium
 
 **GOAL:** `POST /workspaces` creates a workspace. `POST /api-keys` issues a new API key (returns plaintext once, stores SHA-256 hash). All `/workspaces/*` endpoints require `Authorization: Bearer <key>`. Existing public endpoints (`/search`, `/ingest`, `/status`, `/browse`) remain unauthenticated.
@@ -272,6 +272,7 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 - `POST /workspaces` and `POST /api-keys` are bootstrap endpoints — no auth required
 - Auth middleware: extract Bearer token → hash → query `api_keys` table → reject 401 if not found
 - `GET /workspaces/:id/docs` returns document list with status from Postgres
+- `DELETE /api-keys/:id` revokes a key (idempotent via `COALESCE(revoked_at, now())`)
 - Add `rand` crate for key generation
 
 **FAILURE CONDITIONS:**
@@ -280,6 +281,16 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 - `GET /workspaces/:id/docs` with wrong workspace_id leaks another workspace's docs
 - Bootstrap endpoints accidentally protected by auth
 - Existing public endpoints break (require auth)
+
+**Completed:**
+- `src/features/auth/` — handler (create workspace, create key, revoke key, list docs), middleware (Bearer token extraction + SHA-256 hash lookup), keys (generation with `hke_` prefix + 32 alphanumeric chars)
+- `src/shared/db/workspaces.rs` — CRUD for workspaces, API keys (insert, find by hash/id, revoke), workspace doc listing
+- `DELETE /api-keys/:id` — revoke endpoint with ownership validation (404 if not found, 401 if wrong workspace)
+- Auth middleware rejects revoked keys with "API key has been revoked" message
+- `web/src/routes/settings/+page.svelte` — 3-step wizard UI (create workspace → generate API key → view docs)
+- `web/src/lib/api/workspaces.ts` — frontend API client for workspace/key management
+- `web/src/lib/api/client.ts` — `setAuthToken()` + `apiFetch()` includes Bearer header when token set
+- Integration test: `test_workspace_and_auth` with 16 assertions (create, empty name rejection, key generation, auth middleware, cross-workspace isolation, revoke, revoked key rejection)
 
 ---
 
@@ -343,7 +354,7 @@ Task 11 (SvelteKit frontend)            ✅
 🔍 Tech Debt Audit 3                    ✅ (combined with Audit 2)
   │
   ▼
-Task 10 (Workspaces + API keys)        ← CURRENT
+Task 10 (Workspaces + API keys)        ✅
 ```
 
 **Completed:** Tasks 1–9, R1, Tech Debt Audits 1–3, Task 11 + cancel/shutdown/docker teardown
@@ -514,9 +525,9 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Task 10 — Workspaces + API key management
-**Next Task:** Improvements & Polish
-**Recently Completed:** Tech Debt Audits 2+3 (combined), Task 9 (SSE /events), Task 8 (Neo4j graph)
+**Current Task:** Improvements & Polish
+**Next Task:** —
+**Recently Completed:** Task 10 (Workspaces + API keys + revoke), Tech Debt Audits 2+3 (combined), Task 9 (SSE /events)
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)
 

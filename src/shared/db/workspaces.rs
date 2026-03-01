@@ -104,6 +104,39 @@ pub async fn find_api_key_by_hash(
     .await
 }
 
+pub async fn find_api_key_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<ApiKeyRow>, sqlx::Error> {
+    sqlx::query_as::<_, ApiKeyRow>(
+        r#"
+        SELECT id, workspace_id, key_hash, key_prefix, label, created_by, expires_at, revoked_at, created_at
+        FROM api_keys
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn revoke_api_key(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<ApiKeyRow, sqlx::Error> {
+    sqlx::query_as::<_, ApiKeyRow>(
+        r#"
+        UPDATE api_keys
+        SET revoked_at = COALESCE(revoked_at, now())
+        WHERE id = $1
+        RETURNING id, workspace_id, key_hash, key_prefix, label, created_by, expires_at, revoked_at, created_at
+        "#,
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn list_workspace_docs(
     pool: &PgPool,
     workspace_id: Uuid,
