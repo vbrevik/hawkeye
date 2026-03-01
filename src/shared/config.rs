@@ -17,7 +17,7 @@ pub struct AppConfig {
     pub mlx_url: String,
 
     /// MLX model name to use for inference
-    #[arg(long, default_value = "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit")]
+    #[arg(long, default_value = "mlx-community/Qwen3.5-35B-A3B-4bit")]
     pub mlx_model: String,
 
     /// LLM sampling temperature (0.0 = deterministic, 1.0 = creative)

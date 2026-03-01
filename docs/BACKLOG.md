@@ -8,7 +8,7 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 
 ### Core Summarizer (v1)
 - Axum 0.8 server with Tantivy full-text search index
-- MLX inference sidecar integration (Qwen3-Next-80B-A3B-Instruct-4bit)
+- MLX inference sidecar integration (Qwen3.5-35B-A3B-4bit)
 - Concurrent work queue with configurable workers
 - SHA-256 content hashing to skip unchanged files on re-ingest
 - `.summary.json` sidecar files with tldr, title, tags, entities, topics
