@@ -1,8 +1,8 @@
 # Project knowledge
 
-Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search.
+Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, Tokio) + Python sidecar (mlx-lm, GPT-OSS 20B) — optimised for Apple Silicon.
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, Tokio) + Python sidecar (mlx-lm, GPT-OSS 20B) — optimised for Apple Silicon.
 
 ## Quickstart
 
@@ -25,14 +25,14 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - `src/scanner/` — Filesystem `.md` file discovery
 - `src/search/` — Tantivy full-text index
 - `src/db/` — Postgres CRUD (documents, summaries) via sqlx `query_as` runtime checking
-- `src/summary/` — `.summary.json` read/write
+- `src/summary/` — `Summary` struct (types only; storage is in Postgres via `src/db/`)
 - `tests/integration_test.rs` — Integration tests
 - `test_data/` — Sample markdown files for testing
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
 - `migrations/` — sqlx Postgres migrations (run automatically on startup)
 
-**Data flow:** `.md` files → Rust queue → mlx-lm sidecar → `.summary.json` + Tantivy index → search API + web UI
+**Data flow:** `.md` files → Rust queue → mlx-lm sidecar → Postgres (documents + summaries) + Tantivy index → search API + web UI
 
 ## Conventions
 
@@ -40,7 +40,7 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Config via clap derive macros, all flags have defaults
 - Handlers are `async fn` with Axum extractors (`State`, `Query`, `Json`, `Path`)
 - Each API module is one file per endpoint group
-- SHA-256 content hashing to skip unchanged files on re-ingest
+- SHA-256 content hashing to skip unchanged files on re-ingest (hashes checked against Postgres, not filesystem)
 - Clippy with `-D warnings` (treat warnings as errors)
 - No global package installs; use `cargo` for Rust deps
 - Docker ports intentionally offset from defaults (Postgres 5433, Neo4j 7475/7688) to avoid conflicts
@@ -50,7 +50,7 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Milvus health check is on port **9091**, not the main 19530 — the code does `.replace(":19530", ":9091")`
 - MLX sidecar runs on **7701** by default (not 8100 as older docs may say)
 - Default server port is **7700** (not 3000)
-- SHA-256 hash is stored in `.summary.json` as `source_hash` — if you manually edit a `.md` file without updating the hash, re-ingest won't pick up the change
+- SHA-256 hash is stored in Postgres `documents.source_hash` — skip logic fetches known hashes from Postgres before scanning, so if you manually edit a `.md` file, re-ingest will detect the changed hash and reprocess it
 - `Arc<AppState>` is cloned into each handler via `State(state): State<Arc<AppState>>` extractor — the `Arc` means cheap clones, but you still need `.clone()` on the inner fields
 - The Tantivy index dir (`.hawkeye_index`) is gitignored — it's created automatically on first run
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
