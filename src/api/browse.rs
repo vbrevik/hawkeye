@@ -3,8 +3,8 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::path::PathBuf;
 
 #[derive(Deserialize)]
 pub struct BrowseQuery {
@@ -19,7 +19,7 @@ pub struct BrowseResponse {
     pub md_file_count: usize,
 }
 
-pub fn list_dir(dir: &PathBuf) -> Result<BrowseResponse, String> {
+pub fn list_dir(dir: &std::path::Path) -> Result<BrowseResponse, String> {
     let path = dir
         .canonicalize()
         .map_err(|e| format!("Cannot resolve path: {e}"))?;
