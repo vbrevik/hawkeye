@@ -55,22 +55,22 @@ cargo build --release
 First run downloads the model (~11–22GB). Wait for:
 ```
 INFO:     Started server process
-INFO:     Uvicorn running on http://0.0.0.0:8100
+INFO:     Uvicorn running on http://0.0.0.0:7701
 ```
 
 **3. Start the hawkeye server**
 
 ```bash
-# Default: port 3000, 4 workers
+# Default: port 7700, 4 workers
 cargo run --release
 
 # Custom options
-cargo run --release -- --port 8080 --workers 8 --mlx-url http://localhost:8100
+cargo run --release -- --port 8080 --workers 8 --mlx-url http://localhost:7701
 ```
 
 **4. Open the web UI**
 
-Visit [http://localhost:3000](http://localhost:3000)
+Visit [http://localhost:7700](http://localhost:7700)
 
 The status bar shows whether the MLX sidecar is online and live queue progress.
 
@@ -79,7 +79,7 @@ The status bar shows whether the MLX sidecar is online and live queue progress.
 ### Start ingestion
 
 ```bash
-curl -X POST http://localhost:3000/ingest \
+curl -X POST http://localhost:7700/ingest \
   -H 'Content-Type: application/json' \
   -d '{"path": "/Users/you/notes"}'
 ```
@@ -92,7 +92,7 @@ Response:
 ### Check progress
 
 ```bash
-curl http://localhost:3000/status
+curl http://localhost:7700/status
 ```
 
 ```json
@@ -103,11 +103,11 @@ curl http://localhost:3000/status
 
 ```bash
 # Full-text search
-curl "http://localhost:3000/search?q=kubernetes+deployment&limit=10"
+curl "http://localhost:7700/search?q=kubernetes+deployment&limit=10"
 
 # Field-specific search
-curl "http://localhost:3000/search?q=tags:devops"
-curl "http://localhost:3000/search?q=title:incident"
+curl "http://localhost:7700/search?q=tags:devops"
+curl "http://localhost:7700/search?q=title:incident"
 ```
 
 Results ranked by relevance score:
@@ -129,7 +129,7 @@ Results ranked by relevance score:
 Returns the most frequent tags, topics, and entities across all indexed files:
 
 ```bash
-curl "http://localhost:3000/facets"
+curl "http://localhost:7700/facets"
 ```
 
 ```json
@@ -152,7 +152,7 @@ Returns up to 20 tags, 10 topics, and 15 entities ranked by frequency.
 ### Browse a directory
 
 ```bash
-curl "http://localhost:3000/browse?path=/Users/you/notes"
+curl "http://localhost:7700/browse?path=/Users/you/notes"
 ```
 
 ```json
@@ -169,7 +169,7 @@ curl "http://localhost:3000/browse?path=/Users/you/notes"
 ### Get single file summary
 
 ```bash
-curl "http://localhost:3000/summary/path/to/notes.md"
+curl "http://localhost:7700/summary/path/to/notes.md"
 ```
 
 ### Rebuild search index
@@ -177,7 +177,7 @@ curl "http://localhost:3000/summary/path/to/notes.md"
 If you have existing `.summary.json` files but a fresh index:
 
 ```bash
-curl -X POST http://localhost:3000/reindex
+curl -X POST http://localhost:7700/reindex
 ```
 
 ## Test data
@@ -195,7 +195,7 @@ python3 scripts/generate_synthetic_notes.py test_data/ 1000
 Then ingest:
 
 ```bash
-curl -X POST http://localhost:3000/ingest \
+curl -X POST http://localhost:7700/ingest \
   -d '{"path": "'$(pwd)'/test_data"}'
 ```
 
@@ -216,7 +216,7 @@ cargo clippy -- -D warnings
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--port` | 3000 | Server port |
-| `--mlx-url` | http://localhost:8100 | MLX sidecar URL |
+| `--port` | 7700 | Server port |
+| `--mlx-url` | http://localhost:7701 | MLX sidecar URL |
 | `--workers` | 4 | Concurrent summarization workers |
 | `--index-path` | .hawkeye_index | Tantivy index directory |
