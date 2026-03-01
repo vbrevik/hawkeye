@@ -70,43 +70,21 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 
 ### Phase 2: Intelligence Layer
 
-#### Task 4 — Merged LLM prompt with relationship extraction
-**Priority:** High | **Effort:** Small
+#### Task 4 — Merged LLM prompt with relationship extraction ✅
+- SYSTEM_PROMPT extended to extract relationships in single LLM call
+- `Relationship` struct with typed `RelationType` enum (serde other fallback)
+- `relationships JSONB` column added to summaries (migration 0002)
+- `LlmOutput.relationships` defaults to `[]` when LLM omits field
+- `GET /summary/:file` includes relationships in response
+- 23 unit tests + 3 integration tests pass
 
-**GOAL:** After ingest, `summaries.relationships` column in Postgres contains extracted entity relationships. The existing LLM system prompt is extended (one call, not two) to also return a `relationships` array. `GET /summary/:file` includes relationships in its JSON response.
-
-**CONSTRAINTS:**
-- Single LLM call — do NOT add a second inference request
-- Keep `/no_think` prefix in system prompt
-- `Relationship` struct: `{ from, rel, to, context }` with typed rel values (owns, depends_on, manages, etc.)
-- Handle LLM responses that omit the `relationships` field gracefully (default to `[]`)
-
-**FAILURE CONDITIONS:**
-- System prompt still asks for only 5 fields (no relationships)
-- `LlmOutput.relationships` is `serde_json::Value` instead of typed `Vec<Relationship>`
-- Worker crashes when LLM omits the relationships field
-- A second HTTP call is made to the LLM
-
----
-
-#### Task 5 — Redis Streams replace in-memory queue
-**Priority:** Medium | **Effort:** Medium
-
-**GOAL:** `POST /ingest` publishes file paths to a Redis Stream. Workers consume from the stream using consumer groups. Jobs survive server restarts. `GET /status` reads counts from Redis. The in-memory `QueueManager` is deleted.
-
-**CONSTRAINTS:**
-- Use `deadpool-redis` for connection pooling (already a planned dependency)
-- Redis Stream key: `hawkeye:jobs:{workspace_id}`
-- Consumer group: `hawkeye-workers`, created on startup (idempotent)
-- Workers ACK messages after successful processing
-- Failed jobs stay in the pending entries list (PEL) for retry
-
-**FAILURE CONDITIONS:**
-- In-memory `QueueManager` still exists
-- Jobs lost on server restart
-- `GET /status` returns stale counts (not from Redis)
-- Consumer group not created automatically on first run
-- No integration test with real Redis
+#### Task 5 — Redis Streams replace in-memory queue ✅
+- `RedisQueue` (src/queue/stream.rs) with XADD, XREADGROUP, XACK, status counters
+- Consumer loop (src/queue/consumer.rs) with spawn_consumers() for N workers
+- `POST /ingest` publishes to Redis Stream; `GET /status` reads Redis counters
+- In-memory `QueueManager` deleted, `AppState.redis_pool` replaces it
+- Consumer group created idempotently on startup; jobs survive restarts
+- Integration tests use real Redis with unique workspace IDs for isolation
 
 ---
 
@@ -272,8 +250,8 @@ Tasks 4, 5, and 9 can be done in parallel with their predecessors.
 
 ## Task Tracking
 
-**Current Task:** Task 4 — Merged LLM prompt with relationship extraction
-**Next Task:** Task 5 — Redis Streams replace in-memory queue
+**Current Task:** Task 6 — Embedding sidecar (bge-m3)
+**Next Task:** Task 7 — Milvus vector store + semantic search
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests
 
