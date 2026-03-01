@@ -303,3 +303,216 @@ fn extract_string(
         _ => Err(format!("expected string, got {:?}", value).into()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use redis::Value;
+
+    fn bulk(s: &str) -> Value {
+        Value::BulkString(s.as_bytes().to_vec())
+    }
+
+    /// Build a valid XREADGROUP-shaped redis::Value:
+    /// [[stream_key, [[msg_id, [field, value, ...]]]]]
+    fn make_xread_reply(msg_id: &str, fields: Vec<Value>) -> Value {
+        Value::Array(vec![Value::Array(vec![
+            bulk("hawkeye:jobs:test"),
+            Value::Array(vec![Value::Array(vec![
+                bulk(msg_id),
+                Value::Array(fields),
+            ])]),
+        ])])
+    }
+
+    // --- extract_string ---
+
+    #[test]
+    fn test_extract_string_bulk_string() {
+        let val = bulk("hello");
+        assert_eq!(extract_string(val).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_extract_string_simple_string() {
+        let val = Value::SimpleString("ok".to_string());
+        assert_eq!(extract_string(val).unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_extract_string_int() {
+        let val = Value::Int(42);
+        assert_eq!(extract_string(val).unwrap(), "42");
+    }
+
+    #[test]
+    fn test_extract_string_unsupported_type() {
+        let val = Value::Nil;
+        let err = extract_string(val).unwrap_err();
+        assert!(err.to_string().contains("expected string"));
+    }
+
+    // --- parse_stream_message ---
+
+    #[test]
+    fn test_parse_nil_returns_none() {
+        let result = parse_stream_message(Value::Nil).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_empty_array_returns_none() {
+        let result = parse_stream_message(Value::Array(vec![])).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_valid_message() {
+        let reply = make_xread_reply(
+            "1234-0",
+            vec![
+                bulk("path"),
+                bulk("/tmp/test.md"),
+                bulk("hash"),
+                bulk("sha256:abc123"),
+                bulk("size"),
+                bulk("999"),
+            ],
+        );
+
+        let (id, file) = parse_stream_message(reply).unwrap().unwrap();
+        assert_eq!(id, "1234-0");
+        assert_eq!(file.path, PathBuf::from("/tmp/test.md"));
+        assert_eq!(file.hash, "sha256:abc123");
+        assert_eq!(file.size, 999);
+    }
+
+    #[test]
+    fn test_parse_unknown_fields_ignored() {
+        let reply = make_xread_reply(
+            "5678-0",
+            vec![
+                bulk("path"),
+                bulk("/docs/notes.md"),
+                bulk("extra"),
+                bulk("ignored"),
+                bulk("hash"),
+                bulk("sha256:def"),
+                bulk("size"),
+                bulk("10"),
+            ],
+        );
+
+        let (_, file) = parse_stream_message(reply).unwrap().unwrap();
+        assert_eq!(file.path, PathBuf::from("/docs/notes.md"));
+        assert_eq!(file.hash, "sha256:def");
+        assert_eq!(file.size, 10);
+    }
+
+    #[test]
+    fn test_parse_non_array_stream_returns_none() {
+        let reply = Value::Array(vec![Value::Nil]);
+        let result = parse_stream_message(reply).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_no_messages_returns_none() {
+        let reply = Value::Array(vec![Value::Array(vec![
+            bulk("stream-key"),
+            Value::Array(vec![]),
+        ])]);
+        let result = parse_stream_message(reply).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_missing_fields_array_returns_error() {
+        let reply = Value::Array(vec![Value::Array(vec![
+            bulk("stream-key"),
+            Value::Array(vec![Value::Array(vec![
+                bulk("msg-id"),
+                Value::Nil,
+            ])]),
+        ])]);
+        let result = parse_stream_message(reply);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_int_value_returns_none() {
+        let result = parse_stream_message(Value::Int(0)).unwrap();
+        assert!(result.is_none());
+    }
+
+    // --- RedisQueue key formatting ---
+
+    #[test]
+    fn test_redis_queue_key_format() {
+        let cfg = deadpool_redis::Config::from_url("redis://127.0.0.1:6379");
+        let pool = cfg
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .unwrap();
+        let ws = Uuid::nil();
+        let q = RedisQueue::new(pool, ws);
+
+        let ws_str = ws.to_string();
+        assert_eq!(q.stream_key, format!("hawkeye:jobs:{}", ws_str));
+        assert_eq!(q.total_key, format!("hawkeye:stats:{}:total", ws_str));
+        assert_eq!(q.completed_key, format!("hawkeye:stats:{}:completed", ws_str));
+        assert_eq!(q.failed_key, format!("hawkeye:stats:{}:failed", ws_str));
+        assert_eq!(q.errors_key, format!("hawkeye:errors:{}", ws_str));
+    }
+
+    // --- Serialization ---
+
+    #[test]
+    fn test_file_error_roundtrip() {
+        let err = FileError {
+            file: "notes.md".to_string(),
+            error: "inference timeout".to_string(),
+            attempts: 3,
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        let parsed: FileError = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.file, "notes.md");
+        assert_eq!(parsed.error, "inference timeout");
+        assert_eq!(parsed.attempts, 3);
+    }
+
+    #[test]
+    fn test_queue_status_serialization() {
+        let status = QueueStatus {
+            total: 10,
+            completed: 7,
+            failed: 1,
+            in_progress: 2,
+            errors: vec![FileError {
+                file: "bad.md".to_string(),
+                error: "parse error".to_string(),
+                attempts: 3,
+            }],
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["total"], 10);
+        assert_eq!(val["completed"], 7);
+        assert_eq!(val["failed"], 1);
+        assert_eq!(val["in_progress"], 2);
+        assert_eq!(val["errors"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_cancel_result_serialization() {
+        let result = CancelResult {
+            cancelled: 5,
+            already_completed: 3,
+            already_failed: 1,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["cancelled"], 5);
+        assert_eq!(val["already_completed"], 3);
+        assert_eq!(val["already_failed"], 1);
+    }
+}
