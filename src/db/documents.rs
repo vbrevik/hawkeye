@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(dead_code)]
 pub struct DocumentRow {
     pub id: Uuid,
     pub workspace_id: Uuid,
@@ -14,6 +15,7 @@ pub struct DocumentRow {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(dead_code)]
 pub struct SummaryRow {
     pub id: Uuid,
     pub document_id: Uuid,
@@ -52,6 +54,7 @@ pub async fn upsert_document(
     .await
 }
 
+#[allow(dead_code)]
 pub async fn get_document_by_path(
     pool: &PgPool,
     workspace_id: Uuid,
@@ -136,6 +139,7 @@ pub async fn insert_summary(
     .await
 }
 
+#[allow(dead_code)]
 pub async fn get_summary_by_document(
     pool: &PgPool,
     document_id: Uuid,
@@ -148,6 +152,39 @@ pub async fn get_summary_by_document(
         "#,
     )
     .bind(document_id)
+    .fetch_optional(pool)
+    .await
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct FullSummaryRow {
+    pub source_path: String,
+    pub source_hash: String,
+    pub tldr: String,
+    pub title: String,
+    pub tags: serde_json::Value,
+    pub entities: serde_json::Value,
+    pub topics: serde_json::Value,
+    pub word_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn get_summary_by_source_path(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    source_path: &str,
+) -> Result<Option<FullSummaryRow>, sqlx::Error> {
+    sqlx::query_as::<_, FullSummaryRow>(
+        r#"
+        SELECT d.source_path, d.source_hash,
+               s.tldr, s.title, s.tags, s.entities, s.topics, s.word_count, s.created_at
+        FROM documents d
+        JOIN summaries s ON s.document_id = d.id
+        WHERE d.workspace_id = $1 AND d.source_path = $2
+        "#,
+    )
+    .bind(workspace_id)
+    .bind(source_path)
     .fetch_optional(pool)
     .await
 }

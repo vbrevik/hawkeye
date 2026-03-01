@@ -20,6 +20,5 @@ pub struct AppState {
     pub queue: QueueManager,
     pub inference: Arc<InferenceClient>,
     pub indexer: Arc<Mutex<SearchIndexer>>,
-    #[allow(dead_code)]
     pub pg_pool: PgPool,
 }

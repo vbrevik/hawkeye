@@ -2,6 +2,7 @@ use crate::inference::client::InferenceClient;
 use crate::scanner::files::ScannedFile;
 use crate::search::indexer::SearchIndexer;
 use serde::Serialize;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 
@@ -69,6 +70,7 @@ impl QueueManager {
         files: Vec<ScannedFile>,
         client: Arc<InferenceClient>,
         indexer: Arc<Mutex<SearchIndexer>>,
+        pool: PgPool,
     ) {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let total = files.len();
@@ -85,6 +87,7 @@ impl QueueManager {
             let client = client.clone();
             let state = self.state.clone();
             let indexer = indexer.clone();
+            let pool = pool.clone();
 
             let handle = tokio::spawn(async move {
                 {
@@ -92,7 +95,7 @@ impl QueueManager {
                     s.in_progress += 1;
                 }
 
-                let result = super::worker::process_file(&file, &client, &indexer).await;
+                let result = super::worker::process_file(&file, &client, &indexer, &pool).await;
 
                 {
                     let mut s = state.lock().await;

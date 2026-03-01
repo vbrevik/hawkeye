@@ -7,10 +7,10 @@ use hawkeye::{
     queue::manager::QueueManager,
     scanner::files::scan_directory,
     search::indexer::SearchIndexer,
-    summary::store::read_summary,
 };
 use serde_json::json;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -71,17 +71,22 @@ async fn test_full_pipeline() {
         inference: Arc::new(InferenceClient::new(&mlx_url, "mock-model")),
         queue: QueueManager::new(2),
         indexer: Arc::new(Mutex::new(indexer)),
-        pg_pool,
+        pg_pool: pg_pool.clone(),
     });
 
     // 4. Scan and process
-    let scan = scan_directory(dir.path()).unwrap();
+    let scan = scan_directory(dir.path(), &HashMap::new()).unwrap();
     assert_eq!(scan.to_process.len(), 5, "Expected 5 files to process");
     assert_eq!(scan.skipped, 0);
 
     state
         .queue
-        .process_files(scan.to_process, state.inference.clone(), state.indexer.clone())
+        .process_files(
+            scan.to_process,
+            state.inference.clone(),
+            state.indexer.clone(),
+            state.pg_pool.clone(),
+        )
         .await;
 
     // 5. Verify queue status
@@ -91,16 +96,24 @@ async fn test_full_pipeline() {
     assert_eq!(status.in_progress, 0);
     drop(status);
 
-    // 6. Verify .summary.json files on disk
+    // 6. Verify summaries in Postgres
     for i in 0..5 {
         let md_path = dir.path().join(format!("doc{}.md", i));
-        let summary_path = hawkeye::summary::store::summary_path_for(&md_path);
-        assert!(summary_path.exists(), "Missing summary for doc{}.md", i);
+        let source_path = md_path.display().to_string();
 
-        let summary = read_summary(&summary_path).unwrap();
+        let doc = documents::get_document_by_path(&pg_pool, Uuid::nil(), &source_path)
+            .await
+            .unwrap();
+        assert!(doc.is_some(), "Missing document for doc{}.md", i);
+        let doc = doc.unwrap();
+        assert!(!doc.source_hash.is_empty());
+
+        let summary = documents::get_summary_by_document(&pg_pool, doc.id)
+            .await
+            .unwrap();
+        assert!(summary.is_some(), "Missing summary for doc{}.md", i);
+        let summary = summary.unwrap();
         assert_eq!(summary.title, "Test Doc");
-        assert_eq!(summary.source, format!("doc{}.md", i));
-        assert!(!summary.source_hash.is_empty());
         assert!(summary.word_count > 0);
     }
 
@@ -129,6 +142,8 @@ async fn test_skip_logic_on_rerun() {
 
     let index_dir = tempfile::tempdir().unwrap();
     let mlx_url = format!("http://{}", mock_addr);
+    let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
+    sqlx::migrate!().run(&pg_pool).await.unwrap();
 
     // First run — process all 3
     let indexer = SearchIndexer::new_in_dir(index_dir.path()).unwrap();
@@ -136,16 +151,26 @@ async fn test_skip_logic_on_rerun() {
     let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
     let indexer = Arc::new(Mutex::new(indexer));
 
-    let scan1 = scan_directory(dir.path()).unwrap();
+    let scan1 = scan_directory(dir.path(), &HashMap::new()).unwrap();
     assert_eq!(scan1.to_process.len(), 3);
-    queue.process_files(scan1.to_process, inference.clone(), indexer.clone()).await;
+    queue
+        .process_files(scan1.to_process, inference.clone(), indexer.clone(), pg_pool.clone())
+        .await;
 
     let status = queue.state.lock().await;
     assert_eq!(status.completed, 3);
     drop(status);
 
-    // Second run — all 3 should be skipped (content unchanged)
-    let scan2 = scan_directory(dir.path()).unwrap();
+    // Second run — fetch known hashes from Postgres, all 3 should be skipped
+    let hashes = documents::get_source_hashes(&pg_pool, Uuid::nil())
+        .await
+        .unwrap();
+    let known: HashMap<String, String> = hashes
+        .into_iter()
+        .map(|h| (h.source_path, h.source_hash))
+        .collect();
+
+    let scan2 = scan_directory(dir.path(), &known).unwrap();
     assert_eq!(scan2.to_process.len(), 0, "All files should be skipped on rerun");
     assert_eq!(scan2.skipped, 3);
 }
@@ -237,6 +262,15 @@ async fn test_db_migrations_and_document_crud() {
         .await
         .unwrap();
     assert!(missing.is_none());
+
+    // Verify get_summary_by_source_path (the joined query)
+    let full = documents::get_summary_by_source_path(&pool, workspace_id, "/tmp/test/notes.md")
+        .await
+        .unwrap();
+    assert!(full.is_some());
+    let full = full.unwrap();
+    assert_eq!(full.title, "Test Doc");
+    assert_eq!(full.source_hash, "sha256:def456");
 
     // Clean up test data
     sqlx::query("DELETE FROM summaries WHERE document_id = $1")

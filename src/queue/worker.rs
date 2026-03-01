@@ -1,9 +1,11 @@
+use crate::db::documents::{self, InsertSummary};
 use crate::inference::client::InferenceClient;
 use crate::scanner::files::ScannedFile;
 use crate::search::indexer::SearchIndexer;
-use crate::summary::store;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 const MAX_RETRIES: usize = 3;
 
@@ -11,6 +13,7 @@ pub async fn process_file(
     file: &ScannedFile,
     client: &InferenceClient,
     indexer: &Arc<Mutex<SearchIndexer>>,
+    pool: &PgPool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let content = tokio::fs::read_to_string(&file.path).await?;
     let filename = file
@@ -25,11 +28,36 @@ pub async fn process_file(
     for attempt in 1..=MAX_RETRIES {
         match client.summarize(filename, &content, &file.hash).await {
             Ok(summary) => {
-                let summary_path = store::summary_path_for(&file.path);
-                store::write_summary(&summary_path, &summary)
-                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-                        e.to_string().into()
-                    })?;
+                let source_path = file.path.display().to_string();
+
+                let doc = documents::upsert_document(
+                    pool,
+                    Uuid::nil(),
+                    &source_path,
+                    &file.hash,
+                    Some(file.size as i64),
+                )
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                    e.to_string().into()
+                })?;
+
+                documents::insert_summary(
+                    pool,
+                    &InsertSummary {
+                        document_id: doc.id,
+                        tldr: &summary.tldr,
+                        title: &summary.title,
+                        tags: &summary.tags,
+                        entities: &summary.entities,
+                        topics: &summary.topics,
+                        word_count: summary.word_count as i64,
+                    },
+                )
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                    e.to_string().into()
+                })?;
 
                 let mut idx = indexer.lock().await;
                 idx.index_summary(&summary)

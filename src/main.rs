@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod db;
 mod inference;
 mod queue;
 mod scanner;

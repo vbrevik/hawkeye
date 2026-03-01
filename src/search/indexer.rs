@@ -1,4 +1,4 @@
-use crate::summary::store::Summary;
+use crate::summary::Summary;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -185,7 +185,7 @@ impl SearchIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::summary::store::Summary;
+    use crate::summary::Summary;
     use chrono::Utc;
 
     fn make_summary(source: &str, tldr: &str, title: &str, tags: Vec<&str>) -> Summary {

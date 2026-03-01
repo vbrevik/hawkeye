@@ -1,24 +1,45 @@
-use crate::summary::store;
-use axum::extract::Path;
+use crate::api::AppState;
+use crate::db::documents;
+use crate::summary::Summary;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use std::path::PathBuf;
+use std::sync::Arc;
+use uuid::Uuid;
 
 pub async fn handle_summary(
+    State(state): State<Arc<AppState>>,
     Path(file): Path<String>,
-) -> Result<Json<store::Summary>, (StatusCode, String)> {
-    let md_path = PathBuf::from(&file);
-    let summary_path = store::summary_path_for(&md_path);
-
-    if !summary_path.exists() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            format!("No summary found for {}", file),
-        ));
-    }
-
-    let summary = store::read_summary(&summary_path)
+) -> Result<Json<Summary>, (StatusCode, String)> {
+    let row = documents::get_summary_by_source_path(&state.pg_pool, Uuid::nil(), &file)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(summary))
+    match row {
+        Some(r) => {
+            let source = std::path::Path::new(&r.source_path)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or(r.source_path.clone());
+            let tags: Vec<String> = serde_json::from_value(r.tags).unwrap_or_default();
+            let entities: Vec<String> = serde_json::from_value(r.entities).unwrap_or_default();
+            let topics: Vec<String> = serde_json::from_value(r.topics).unwrap_or_default();
+
+            Ok(Json(Summary {
+                source,
+                source_hash: r.source_hash,
+                created_at: r.created_at,
+                tldr: r.tldr,
+                title: r.title,
+                tags,
+                entities,
+                topics,
+                word_count: r.word_count as u64,
+            }))
+        }
+        None => Err((
+            StatusCode::NOT_FOUND,
+            format!("No summary found for {}", file),
+        )),
+    }
 }

@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -22,8 +23,11 @@ pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
     Ok(format!("sha256:{:x}", result))
 }
 
-/// Scan a directory for .md files, skip those with up-to-date summaries
-pub fn scan_directory(dir: &Path) -> Result<ScanResult, Box<dyn std::error::Error>> {
+/// Scan a directory for .md files, skip those with up-to-date hashes in known_hashes
+pub fn scan_directory(
+    dir: &Path,
+    known_hashes: &HashMap<String, String>,
+) -> Result<ScanResult, Box<dyn std::error::Error>> {
     let pattern = dir.join("*.md");
     let pattern_str = pattern.to_str().ok_or("Invalid path")?;
 
@@ -35,13 +39,11 @@ pub fn scan_directory(dir: &Path) -> Result<ScanResult, Box<dyn std::error::Erro
         let metadata = std::fs::metadata(&path)?;
         let hash = hash_file(&path)?;
 
-        let summary_path = crate::summary::store::summary_path_for(&path);
-        if summary_path.exists() {
-            if let Ok(existing) = crate::summary::store::read_summary(&summary_path) {
-                if existing.source_hash == hash {
-                    skipped += 1;
-                    continue;
-                }
+        let path_str = path.display().to_string();
+        if let Some(existing_hash) = known_hashes.get(&path_str) {
+            if *existing_hash == hash {
+                skipped += 1;
+                continue;
             }
         }
 
@@ -64,8 +66,6 @@ pub fn scan_directory(dir: &Path) -> Result<ScanResult, Box<dyn std::error::Erro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::summary::store::{summary_path_for, write_summary, Summary};
-    use chrono::Utc;
 
     #[test]
     fn test_hash_file() {
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn test_scan_empty_directory() {
         let dir = tempfile::tempdir().unwrap();
-        let result = scan_directory(dir.path()).unwrap();
+        let result = scan_directory(dir.path(), &HashMap::new()).unwrap();
         assert_eq!(result.to_process.len(), 0);
         assert_eq!(result.skipped, 0);
     }
@@ -94,33 +94,23 @@ mod tests {
         std::fs::write(dir.path().join("medium.md"), "a".repeat(100)).unwrap();
         std::fs::write(dir.path().join("not-md.txt"), "ignored").unwrap();
 
-        let result = scan_directory(dir.path()).unwrap();
+        let result = scan_directory(dir.path(), &HashMap::new()).unwrap();
         assert_eq!(result.to_process.len(), 3);
         assert!(result.to_process[0].size <= result.to_process[1].size);
         assert!(result.to_process[1].size <= result.to_process[2].size);
     }
 
     #[test]
-    fn test_scan_skips_up_to_date_summaries() {
+    fn test_scan_skips_up_to_date_hashes() {
         let dir = tempfile::tempdir().unwrap();
         let md_path = dir.path().join("notes.md");
         std::fs::write(&md_path, "some content").unwrap();
 
         let hash = hash_file(&md_path).unwrap();
-        let summary = Summary {
-            source: "notes.md".to_string(),
-            source_hash: hash,
-            created_at: Utc::now(),
-            tldr: "Existing summary.".to_string(),
-            title: "Notes".to_string(),
-            tags: vec![],
-            entities: vec![],
-            topics: vec![],
-            word_count: 2,
-        };
-        write_summary(&summary_path_for(&md_path), &summary).unwrap();
+        let mut known_hashes = HashMap::new();
+        known_hashes.insert(md_path.display().to_string(), hash);
 
-        let result = scan_directory(dir.path()).unwrap();
+        let result = scan_directory(dir.path(), &known_hashes).unwrap();
         assert_eq!(result.to_process.len(), 0);
         assert_eq!(result.skipped, 1);
     }
@@ -131,20 +121,10 @@ mod tests {
         let md_path = dir.path().join("notes.md");
         std::fs::write(&md_path, "original content").unwrap();
 
-        let summary = Summary {
-            source: "notes.md".to_string(),
-            source_hash: "sha256:stale_hash".to_string(),
-            created_at: Utc::now(),
-            tldr: "Old summary.".to_string(),
-            title: "Notes".to_string(),
-            tags: vec![],
-            entities: vec![],
-            topics: vec![],
-            word_count: 2,
-        };
-        write_summary(&summary_path_for(&md_path), &summary).unwrap();
+        let mut known_hashes = HashMap::new();
+        known_hashes.insert(md_path.display().to_string(), "sha256:stale_hash".to_string());
 
-        let result = scan_directory(dir.path()).unwrap();
+        let result = scan_directory(dir.path(), &known_hashes).unwrap();
         assert_eq!(result.to_process.len(), 1);
         assert_eq!(result.skipped, 0);
     }

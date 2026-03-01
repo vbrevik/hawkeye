@@ -1,4 +1,4 @@
-use crate::summary::store::Summary;
+use crate::summary::Summary;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
