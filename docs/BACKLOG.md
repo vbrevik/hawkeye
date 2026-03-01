@@ -344,7 +344,7 @@ Task 11 (SvelteKit frontend)            ✅
   ├──► Task 9 (SSE + live UI)              ✅
   │
   ▼
-🔍 Tech Debt Audit 3                    ← harden before auth
+🔍 Tech Debt Audit 3                    ← CURRENT (harden before auth)
   │
   ▼
 Task 10 (Workspaces + API keys)
@@ -519,10 +519,9 @@ web/
 
 ## Task Tracking
 
-**Current Task:** —
-**Next Task:** Tech Debt Audit 2 + 3 (can be combined), then Task 10 (Workspaces + API keys)
-**Then:** Task 10 (Workspaces + API keys)
-**Recently Completed:** Task 9 (SSE /events + live UI updates), Task 8 (Neo4j knowledge graph + graph viz)
+**Current Task:** Tech Debt Audits 2+3 (combined pass — validate frontend + pre-auth hardening)
+**Next Task:** Task 10 (Workspaces + API keys)
+**Recently Completed:** Task 9 (SSE /events + live UI + integration test), Task 8 (Neo4j knowledge graph + graph viz)
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)
 
