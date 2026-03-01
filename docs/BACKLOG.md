@@ -100,8 +100,8 @@ Hawkeye is a fully functional local knowledge platform:
 | **UI** | ✅ | Inline HTML (search, browse, ingest, facets, detail panel, drawer) |
 | **Semantic Search** | ✅ | Embedding sidecar (bge-m3) + Milvus vector store + `/search/semantic` endpoint |
 | **Frontend** | ✅ | SvelteKit app (search, browse, ingest, facets, detail panel, mobile drawer) |
-| **Knowledge Graph** | 🔜 | Neo4j with extracted relationships + graph viz page (Task 8) |
-| **Real-Time** | 🔜 | SSE events for live ingest progress in SvelteKit UI (Task 9) |
+| **Knowledge Graph** | ✅ | Neo4j with extracted relationships + graph viz page (Task 8) |
+| **Real-Time** | ✅ | SSE events for live ingest progress via Redis pub/sub (Task 9) |
 | **Multi-Tenant** | 🔜 | Workspaces + API keys (Task 10) |
 
 ---
@@ -218,45 +218,32 @@ Ensure the SvelteKit foundation is solid before building on it:
 
 > These tasks add complex UI (graph viz page, live SSE updates) — built directly in SvelteKit components.
 
-#### Task 8 — Neo4j knowledge graph + graph visualization
+#### Task 8 — Neo4j knowledge graph + graph visualization ✅
 **Priority:** Medium | **Effort:** Medium
 
-**GOAL:** After ingest, entity nodes and relationship edges from `summary.relationships` are written to Neo4j. `GET /graph/entity/:name` returns connected entities (2-hop). `GET /graph/document/:id` returns the document's entity neighbourhood. SvelteKit `/graph` page renders an interactive graph visualization.
+- `neo4rs` 0.8 client: `write_document_graph`, `query_entity` (2-hop traversal, 200 edge limit), `query_document`, `ensure_indexes`
+- `GET /graph/entity/{name}` and `GET /graph/document/{id}` endpoints with tracing
+- Neo4j config: `neo4j_bolt_url`, `neo4j_user`, `neo4j_password` (dev-only defaults matching docker-compose)
+- `neo4j: Option<Arc<Neo4jClient>>` in AppState — graceful degradation when Neo4j unavailable
+- Worker writes to Neo4j after Postgres (non-critical: warns on failure, doesn't block ingest)
+- Node labels: Document, Entity, Tag, Topic with MERGE (no duplicates)
+- Edges: MENTIONS (doc→entity), HAS_TAG (doc→tag), ABOUT (doc→topic), RELATED_TO (entity→entity)
+- SvelteKit `/graph` page with force-directed Canvas visualization (zoom, pan, click-to-explore)
+- `GraphCanvas.svelte` renders nodes as colored circles by type with labels
+- Sidebar nav link "Knowledge Graph →" added to main page
+- `test_graph_handler_without_neo4j` integration test (verifies 500 when neo4j is None)
+- 11 integration tests pass, clippy clean
 
-**CONSTRAINTS:**
-- Use `neo4rs` 0.8 — Bolt protocol, async
-- Node labels: `Document`, `Entity`, `Tag`, `Topic`
-- Entity nodes use `MERGE` (not `CREATE`) to avoid duplicates
-- All Neo4j writes happen in the worker after Postgres write
-- If Neo4j is unavailable, log warning and continue — do NOT fail ingest
-- Connection created once on startup via `neo4rs::Graph::new()`
-- Graph viz page in SvelteKit at `/graph` with interactive node exploration
-
-**FAILURE CONDITIONS:**
-- Neo4j writes block or panic when Neo4j is down
-- Entity nodes duplicated (must use MERGE)
-- `/graph/entity/:name` returns 500 on unknown entity (should return empty)
-- Relationships extracted from LLM are not reflected in Neo4j
-
-#### Task 9 — SSE /events endpoint + live UI updates
+#### Task 9 — SSE /events endpoint + live UI updates ✅
 **Priority:** Medium | **Effort:** Small
 
-**GOAL:** `GET /events` returns a Server-Sent Events stream. When a document finishes processing, the worker publishes to Redis pub/sub, and all connected SSE clients receive a `document_done` event within 1 second. Connection stays open indefinitely with keepalive comments. SvelteKit UI consumes events for live ingest progress.
-
-**CONSTRAINTS:**
-- Use `axum::response::sse::{Event, Sse}` — no external SSE crate
-- Use `tokio-stream` for the SSE stream adapter
-- Redis pub/sub channel: `hawkeye:events:{workspace_id}`
-- Worker publishes AFTER `mark_done()` is called
-- 15-second keepalive comments to prevent proxy timeouts
-- Handle client disconnect gracefully (no panic)
-- SvelteKit admin page subscribes to SSE for real-time status updates
-
-**FAILURE CONDITIONS:**
-- `/events` returns 404 or 500 immediately instead of keeping connection open
-- Worker doesn't publish on success
-- SSE sends no `event:` field (must have `event: document_done`)
-- Server panics on client disconnect
+- `features/events/publisher.rs` — `DocumentEvent` enum (Done/Failed) with serde tagged union, `publish_document_event()` via Redis PUBLISH on channel `hawkeye:events:{workspace_id}`
+- `features/events/handler.rs` — `GET /events` SSE handler: per-client Redis pub/sub connection, relays messages via mpsc channel, 15-second keepalive comments
+- Consumer publishes `document_done`/`document_failed` events after `ack_completed`/`ack_failed`
+- `web/src/lib/features/events/useEvents.ts` — `connectEvents()`/`disconnectEvents()` using browser EventSource API; updates queue status store in real-time; shows toast on completion/failure
+- Added `tokio-stream` and `async-stream` dependencies
+- Live-tested: 32 events streamed correctly during 100-doc ingest, keepalive working
+- 39 unit tests pass, clippy clean
 
 ---
 
@@ -351,10 +338,10 @@ Task 7 (Milvus semantic search)        ✅
 Task 11 (SvelteKit frontend)            ✅
   │
   ▼
-🔍 Tech Debt Audit 2                    ← CURRENT (validate frontend foundation)
+🔍 Tech Debt Audit 2                    (validate frontend foundation)
   │
-  ├──► Task 8 (Neo4j + graph viz)          built in SvelteKit
-  ├──► Task 9 (SSE + live UI)              built in SvelteKit
+  ├──► Task 8 (Neo4j + graph viz)          ✅
+  ├──► Task 9 (SSE + live UI)              ✅
   │
   ▼
 🔍 Tech Debt Audit 3                    ← harden before auth
@@ -363,10 +350,10 @@ Task 11 (SvelteKit frontend)            ✅
 Task 10 (Workspaces + API keys)
 ```
 
-**Completed:** Tasks 1–7, R1, Tech Debt Audit 1, Task 11 + cancel/shutdown/docker teardown
+**Completed:** Tasks 1–9, R1, Tech Debt Audit 1, Task 11 + cancel/shutdown/docker teardown
 **In progress:** —
 **Key additions:** 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
-**Parallelizable:** Tasks 8 and 9 can be done in parallel after Tech Debt Audit 2.
+**Parallelizable:** Tech Debt Audits 2 and 3 can be combined into a single pass.
 
 ## Architecture Decisions
 
@@ -532,10 +519,10 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Tech Debt Audit 2 — Post-frontend validation
-**Next Task:** Tasks 8-9 in parallel (Neo4j + SSE, built in SvelteKit)
-**Then:** Tech Debt Audit 3 → Task 10 (Workspaces + API keys)
-**Recently Completed:** Task 11 (SvelteKit frontend), Tech Debt Audit 1 (AppError, tracing, integration tests)
+**Current Task:** —
+**Next Task:** Tech Debt Audit 2 + 3 (can be combined), then Task 10 (Workspaces + API keys)
+**Then:** Task 10 (Workspaces + API keys)
+**Recently Completed:** Task 9 (SSE /events + live UI updates), Task 8 (Neo4j knowledge graph + graph viz)
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)
 

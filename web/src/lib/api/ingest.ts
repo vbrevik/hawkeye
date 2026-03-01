@@ -1,10 +1,10 @@
 import type { IngestResponse, CancelResult } from './types';
 
-export async function ingest(path: string): Promise<IngestResponse> {
+export async function ingest(path: string, limit?: number): Promise<IngestResponse> {
 	const res = await fetch('/ingest', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ path })
+		body: JSON.stringify({ path, limit })
 	});
 	if (!res.ok) {
 		const text = await res.text();

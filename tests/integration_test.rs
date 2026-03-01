@@ -4,6 +4,10 @@ use axum::{routing::{get, post}, Json, Router};
 use clap::Parser;
 use hawkeye::{
     features::browse::handler::handle_browse,
+    features::events::{
+        handler::handle_events,
+        publish_document_event, DocumentEvent,
+    },
     features::graph::handler::{handle_entity_graph, handle_document_graph},
     features::ingest::scanner::scan_directory,
     features::queue::{
@@ -725,6 +729,79 @@ async fn test_status_handler() {
 
     // Cleanup
     queue.cleanup().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_sse_events() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let redis_pool = state.redis_pool.clone();
+
+    // Start a real HTTP server (SSE is streaming — can't use oneshot)
+    let app = Router::new()
+        .route("/events", get(handle_events))
+        .with_state(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // Connect SSE client
+    let client = reqwest::Client::new();
+    let mut response = client
+        .get(format!("http://{}/events", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    // Wait for Redis pub/sub subscription to establish
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Publish a document_done event via Redis pub/sub
+    publish_document_event(
+        &redis_pool,
+        DEFAULT_WORKSPACE_ID,
+        &DocumentEvent::Done {
+            file: "test-sse.md".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Read SSE data with timeout
+    let chunk = tokio::time::timeout(Duration::from_secs(5), response.chunk())
+        .await
+        .expect("Timed out waiting for SSE event")
+        .unwrap()
+        .expect("SSE stream ended unexpectedly");
+
+    let text = String::from_utf8(chunk.to_vec()).unwrap();
+
+    // Verify SSE format: must contain event type and data
+    assert!(
+        text.contains("event: document_done"),
+        "Missing 'event: document_done' in SSE output: {}",
+        text
+    );
+    assert!(
+        text.contains("test-sse.md"),
+        "Missing file name in SSE output: {}",
+        text
+    );
+
+    // Parse the JSON data line
+    let data_line = text
+        .lines()
+        .find(|l| l.starts_with("data: "))
+        .expect("No 'data:' line in SSE event");
+    let json: serde_json::Value = serde_json::from_str(&data_line[6..]).unwrap();
+    assert_eq!(json["type"], "document_done");
+    assert_eq!(json["file"], "test-sse.md");
 }
 
 #[tokio::test]

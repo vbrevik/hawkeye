@@ -43,8 +43,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `features/browse/handler.rs` — `GET /browse` filesystem directory listing with md_file_count
 - `features/graph/neo4j.rs` — Neo4jClient (connect, write_document_graph, query_entity 2-hop, query_document, ensure_indexes)
 - `features/graph/handler.rs` — `GET /graph/entity/{name}` entity graph traversal, `GET /graph/document/{id}` document graph
-- `features/events/handler.rs` — `GET /events` SSE stream for real-time ingest progress
-- `features/events/publisher.rs` — `DocumentEvent` pub/sub for worker → SSE bridge
+- `features/events/handler.rs` — `GET /events` SSE stream for real-time ingest progress (per-client Redis pub/sub, 15s keepalive)
+- `features/events/publisher.rs` — `DocumentEvent` (Done/Failed) pub/sub for worker → SSE bridge via Redis PUBLISH
 
 ### Shared modules (`src/shared/`)
 
@@ -75,7 +75,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `migrations/` — sqlx Postgres migrations (run automatically on startup)
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
-**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus + Neo4j knowledge graph → search API / graph API → SvelteKit frontend
+**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus + Neo4j knowledge graph → Redis pub/sub (document events) → SSE `/events` → SvelteKit frontend (live updates)
 
 ### Frontend (`web/`)
 
@@ -103,6 +103,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Feature-based module layout: `src/features/` for domain logic, `src/shared/` for cross-cutting concerns
 - SHA-256 content hashing to skip unchanged files on re-ingest (hashes checked against Postgres, not filesystem)
 - Redis Streams for durable job queue — consumer group `hawkeye-workers`, stream key `hawkeye:jobs:{workspace_id}`
+- Redis pub/sub for real-time SSE events — channel `hawkeye:events:{workspace_id}`, published after ack_completed/ack_failed
 - Clippy with `-D warnings` (treat warnings as errors)
 - No global package installs; use `cargo` for Rust deps
 - Docker ports intentionally offset from defaults (Postgres 5433, Neo4j 7475/7688) to avoid conflicts

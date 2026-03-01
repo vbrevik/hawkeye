@@ -14,6 +14,7 @@ use std::sync::Arc;
 #[derive(Deserialize)]
 pub struct IngestRequest {
     pub path: String,
+    pub limit: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -40,8 +41,12 @@ pub async fn handle_ingest(
         .map(|h| (h.source_path, h.source_hash))
         .collect();
 
-    let scan_result = scan_directory(&dir, &known_hashes)
+    let mut scan_result = scan_directory(&dir, &known_hashes)
         .map_err(AppError::internal)?;
+
+    if let Some(limit) = req.limit {
+        scan_result.to_process.truncate(limit);
+    }
 
     let queued = scan_result.to_process.len();
     let skipped = scan_result.skipped;
