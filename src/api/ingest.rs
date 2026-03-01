@@ -1,6 +1,6 @@
 use crate::api::AppState;
 use crate::db::documents::get_source_hashes;
-use crate::queue::manager::QueueManager;
+use crate::queue::stream::RedisQueue;
 use crate::scanner::files::scan_directory;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -49,16 +49,11 @@ pub async fn handle_ingest(
     let queued = scan_result.to_process.len();
     let skipped = scan_result.skipped;
 
-    let client = state.inference.clone();
-    let indexer = state.indexer.clone();
-    let queue_state = state.queue.state.clone();
-    let concurrency = state.config.workers;
-    let pool = state.pg_pool.clone();
-
-    tokio::spawn(async move {
-        let manager = QueueManager::from_state(queue_state, concurrency);
-        manager.process_files(scan_result.to_process, client, indexer, pool).await;
-    });
+    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    queue
+        .publish_files(&scan_result.to_process)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(IngestResponse {
         message: "Ingestion started".to_string(),

@@ -9,15 +9,16 @@ pub mod ui;
 
 use crate::config::AppConfig;
 use crate::inference::client::InferenceClient;
-use crate::queue::manager::QueueManager;
 use crate::search::indexer::SearchIndexer;
+use deadpool_redis::Pool as RedisPool;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct AppState {
     pub config: AppConfig,
-    pub queue: QueueManager,
+    pub redis_pool: RedisPool,
+    #[allow(dead_code)]
     pub inference: Arc<InferenceClient>,
     pub indexer: Arc<Mutex<SearchIndexer>>,
     pub pg_pool: PgPool,

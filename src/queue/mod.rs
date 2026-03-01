@@ -1,2 +1,3 @@
-pub mod manager;
+pub mod consumer;
+pub mod stream;
 pub mod worker;

@@ -1,10 +1,11 @@
 use axum::{routing::post, Json, Router};
 use hawkeye::{
-    api::AppState,
-    config::AppConfig,
     db::documents,
     inference::client::InferenceClient,
-    queue::manager::QueueManager,
+    queue::{
+        consumer::spawn_consumers,
+        stream::RedisQueue,
+    },
     scanner::files::scan_directory,
     search::indexer::SearchIndexer,
 };
@@ -12,10 +13,12 @@ use serde_json::json;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const TEST_POSTGRES_URL: &str = "postgresql://hawkeye:hawkeye@localhost:5433/hawkeye";
+const TEST_REDIS_URL: &str = "redis://localhost:6379";
 
 async fn mock_llm_handler() -> Json<serde_json::Value> {
     Json(json!({
@@ -25,6 +28,31 @@ async fn mock_llm_handler() -> Json<serde_json::Value> {
             }
         }]
     }))
+}
+
+async fn wait_for_completion(queue: &RedisQueue, expected: usize, timeout: Duration) {
+    let start = Instant::now();
+    loop {
+        if let Ok(status) = queue.read_status().await {
+            if status.completed + status.failed >= expected {
+                return;
+            }
+        }
+        if start.elapsed() > timeout {
+            let status = queue.read_status().await.unwrap();
+            panic!(
+                "Timed out waiting for {} completions (completed={}, failed={})",
+                expected, status.completed, status.failed
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+fn create_redis_pool() -> deadpool_redis::Pool {
+    let cfg = deadpool_redis::Config::from_url(TEST_REDIS_URL);
+    cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1))
+        .expect("Failed to create Redis pool")
 }
 
 #[tokio::test]
@@ -47,56 +75,47 @@ async fn test_full_pipeline() {
         axum::serve(listener, mock_app).await.unwrap();
     });
 
-    // 3. Create app state
+    // 3. Setup infrastructure
     let index_dir = tempfile::tempdir().unwrap();
-    let indexer = SearchIndexer::new_in_dir(index_dir.path()).unwrap();
     let mlx_url = format!("http://{}", mock_addr);
     let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
     sqlx::migrate!().run(&pg_pool).await.unwrap();
 
-    let state = Arc::new(AppState {
-        config: AppConfig {
-            port: 0,
-            mlx_url: mlx_url.clone(),
-            mlx_model: "mock-model".to_string(),
-            workers: 2,
-            index_path: index_dir.path().display().to_string(),
-            redis_url: "redis://localhost:6379".to_string(),
-            postgres_url: TEST_POSTGRES_URL.to_string(),
-            etcd_url: "http://localhost:2379".to_string(),
-            minio_url: "http://localhost:9000".to_string(),
-            milvus_url: "http://localhost:19530".to_string(),
-            neo4j_url: "http://localhost:7475".to_string(),
-        },
-        inference: Arc::new(InferenceClient::new(&mlx_url, "mock-model")),
-        queue: QueueManager::new(2),
-        indexer: Arc::new(Mutex::new(indexer)),
-        pg_pool: pg_pool.clone(),
-    });
+    let redis_pool = create_redis_pool();
+    let ws_id = Uuid::new_v4();
+    let queue = RedisQueue::new(redis_pool.clone(), ws_id);
+    queue.ensure_group().await.unwrap();
 
-    // 4. Scan and process
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    // 4. Scan and publish
     let scan = scan_directory(dir.path(), &HashMap::new()).unwrap();
     assert_eq!(scan.to_process.len(), 5, "Expected 5 files to process");
     assert_eq!(scan.skipped, 0);
 
-    state
-        .queue
-        .process_files(
-            scan.to_process,
-            state.inference.clone(),
-            state.indexer.clone(),
-            state.pg_pool.clone(),
-        )
-        .await;
+    queue.publish_files(&scan.to_process).await.unwrap();
 
-    // 5. Verify queue status
-    let status = state.queue.state.lock().await;
+    // 5. Spawn consumers and wait for completion
+    let handles = spawn_consumers(
+        queue.clone(),
+        inference.clone(),
+        indexer.clone(),
+        pg_pool.clone(),
+        2,
+    );
+
+    wait_for_completion(&queue, 5, Duration::from_secs(30)).await;
+
+    // 6. Verify queue status
+    let status = queue.read_status().await.unwrap();
     assert_eq!(status.completed, 5, "All 5 files should be completed");
     assert_eq!(status.failed, 0, "No failures expected");
     assert_eq!(status.in_progress, 0);
-    drop(status);
 
-    // 6. Verify summaries in Postgres
+    // 7. Verify summaries in Postgres
     for i in 0..5 {
         let md_path = dir.path().join(format!("doc{}.md", i));
         let source_path = md_path.display().to_string();
@@ -121,13 +140,19 @@ async fn test_full_pipeline() {
         assert_eq!(rels.len(), 1, "Expected 1 relationship for doc{}.md", i);
     }
 
-    // 7. Verify search works
-    let indexer = state.indexer.lock().await;
+    // 8. Verify search works
+    let indexer = indexer.lock().await;
     let results = indexer.search("testing", 20).unwrap();
     assert_eq!(results.len(), 5, "All 5 docs should be findable");
 
     let results = indexer.search("tags:test", 20).unwrap();
     assert_eq!(results.len(), 5, "All 5 docs should have tag 'test'");
+
+    // Cleanup
+    for h in handles {
+        h.abort();
+    }
+    queue.cleanup().await.unwrap();
 }
 
 #[tokio::test]
@@ -149,21 +174,37 @@ async fn test_skip_logic_on_rerun() {
     let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
     sqlx::migrate!().run(&pg_pool).await.unwrap();
 
-    // First run — process all 3
-    let indexer = SearchIndexer::new_in_dir(index_dir.path()).unwrap();
-    let queue = QueueManager::new(2);
-    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
-    let indexer = Arc::new(Mutex::new(indexer));
+    let redis_pool = create_redis_pool();
+    let ws_id = Uuid::new_v4();
+    let queue = RedisQueue::new(redis_pool.clone(), ws_id);
+    queue.ensure_group().await.unwrap();
 
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    // First run — process all 3
     let scan1 = scan_directory(dir.path(), &HashMap::new()).unwrap();
     assert_eq!(scan1.to_process.len(), 3);
-    queue
-        .process_files(scan1.to_process, inference.clone(), indexer.clone(), pg_pool.clone())
-        .await;
+    queue.publish_files(&scan1.to_process).await.unwrap();
 
-    let status = queue.state.lock().await;
+    let handles = spawn_consumers(
+        queue.clone(),
+        inference.clone(),
+        indexer.clone(),
+        pg_pool.clone(),
+        2,
+    );
+
+    wait_for_completion(&queue, 3, Duration::from_secs(30)).await;
+
+    let status = queue.read_status().await.unwrap();
     assert_eq!(status.completed, 3);
-    drop(status);
+
+    for h in handles {
+        h.abort();
+    }
 
     // Second run — fetch known hashes from Postgres, all 3 should be skipped
     let hashes = documents::get_source_hashes(&pg_pool, Uuid::nil())
@@ -175,8 +216,15 @@ async fn test_skip_logic_on_rerun() {
         .collect();
 
     let scan2 = scan_directory(dir.path(), &known).unwrap();
-    assert_eq!(scan2.to_process.len(), 0, "All files should be skipped on rerun");
+    assert_eq!(
+        scan2.to_process.len(),
+        0,
+        "All files should be skipped on rerun"
+    );
     assert_eq!(scan2.skipped, 3);
+
+    // Cleanup
+    queue.cleanup().await.unwrap();
 }
 
 #[tokio::test]

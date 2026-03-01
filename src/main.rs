@@ -13,11 +13,12 @@ use axum::Router;
 use clap::Parser;
 use config::AppConfig;
 use inference::client::InferenceClient;
-use queue::manager::QueueManager;
+use queue::stream::RedisQueue;
 use search::indexer::SearchIndexer;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -40,13 +41,39 @@ async fn main() {
 
     tracing::info!("database migrations applied");
 
+    let redis_cfg = deadpool_redis::Config::from_url(&config.redis_url);
+    let redis_pool = redis_cfg
+        .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+        .expect("Failed to create Redis pool");
+
+    let queue = RedisQueue::new(redis_pool.clone(), Uuid::nil());
+    queue
+        .ensure_group()
+        .await
+        .expect("Failed to create Redis consumer group");
+
+    tracing::info!("redis consumer group ready");
+
     let indexer = SearchIndexer::new_in_dir(std::path::Path::new(&config.index_path))
         .expect("Failed to create search index");
 
+    let inference = Arc::new(InferenceClient::new(&config.mlx_url, &config.mlx_model));
+    let indexer = Arc::new(Mutex::new(indexer));
+
+    let _consumer_handles = queue::consumer::spawn_consumers(
+        queue,
+        inference.clone(),
+        indexer.clone(),
+        pg_pool.clone(),
+        config.workers,
+    );
+
+    tracing::info!(workers = config.workers, "consumers started");
+
     let state = Arc::new(AppState {
-        inference: Arc::new(InferenceClient::new(&config.mlx_url, &config.mlx_model)),
-        queue: QueueManager::new(config.workers),
-        indexer: Arc::new(Mutex::new(indexer)),
+        inference,
+        redis_pool,
+        indexer,
         config: config.clone(),
         pg_pool,
     });

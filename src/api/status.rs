@@ -1,15 +1,28 @@
 use crate::api::AppState;
-use crate::queue::manager::QueueStatus;
+use crate::queue::stream::{QueueStatus, RedisQueue};
 use axum::extract::State;
 use axum::Json;
 use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
+use uuid::Uuid;
 
 pub async fn handle_status(State(state): State<Arc<AppState>>) -> Json<QueueStatus> {
-    let s = state.queue.state.lock().await;
-    Json(s.status())
+    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    match queue.read_status().await {
+        Ok(status) => Json(status),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to read queue status");
+            Json(QueueStatus {
+                total: 0,
+                completed: 0,
+                failed: 0,
+                in_progress: 0,
+                errors: vec![],
+            })
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
