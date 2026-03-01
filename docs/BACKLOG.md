@@ -32,6 +32,7 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 - `GET /facets` — tag, topic, entity frequency counts
 - `GET /browse` — filesystem directory listing with md_file_count
 - `GET /summary/{file}` — single file summary with relationships from Postgres
+- `POST /reindex` — rebuild Tantivy full-text index from all Postgres summaries
 
 ### Infrastructure (v2 Task 1) ✅
 - Docker Compose with Redis, Postgres, etcd, MinIO, Milvus, Neo4j
@@ -300,7 +301,7 @@ These are smaller tasks without full prompt contracts:
 
 - Document `/health` endpoint in README API section
 - Add health dashboard panel to web UI
-- `POST /reindex` endpoint to rebuild Tantivy from Postgres
+- ~~`POST /reindex` endpoint to rebuild Tantivy from Postgres~~ ✅ Done
 - ~~Graceful shutdown (drain queue, close connections)~~ ✅ Done
 - Structured JSON logging option
 - CI pipeline (cargo test + clippy + docker compose integration tests)

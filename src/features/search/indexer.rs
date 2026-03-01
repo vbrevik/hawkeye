@@ -83,6 +83,27 @@ impl SearchIndexer {
         )
     }
 
+    pub fn clear_all(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.writer.delete_all_documents()?;
+        self.writer.commit()?;
+        Ok(())
+    }
+
+    pub fn index_summaries(&mut self, summaries: &[Summary]) -> Result<usize, Box<dyn std::error::Error>> {
+        for summary in summaries {
+            self.writer.add_document(doc!(
+                self.source_path => summary.source.clone(),
+                self.tldr => summary.tldr.clone(),
+                self.title => summary.title.clone(),
+                self.tags => summary.tags.join(" "),
+                self.entities => summary.entities.join(" "),
+                self.topics => summary.topics.join(" ")
+            ))?;
+        }
+        self.writer.commit()?;
+        Ok(summaries.len())
+    }
+
     pub fn index_summary(&mut self, summary: &Summary) -> Result<(), Box<dyn std::error::Error>> {
         self.writer.add_document(doc!(
             self.source_path => summary.source.clone(),

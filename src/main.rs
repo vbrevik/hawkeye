@@ -165,6 +165,7 @@ async fn main() {
         .route("/status", get(shared::status::handle_status))
         .route("/mlx-status", get(shared::status::handle_mlx_status))
         .route("/search", get(features::search::handler::handle_search))
+        .route("/reindex", post(features::search::handler::handle_reindex))
         .route("/search/semantic", get(features::semantic::handler::handle_semantic_search))
         .route("/facets", get(features::search::facets::handle_facets))
         .route("/summary/{file}", get(features::summary::handler::handle_summary))

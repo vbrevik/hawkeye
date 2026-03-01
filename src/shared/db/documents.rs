@@ -201,6 +201,21 @@ pub struct FullSummaryRow {
     pub created_at: DateTime<Utc>,
 }
 
+pub async fn get_all_summaries(
+    pool: &PgPool,
+) -> Result<Vec<FullSummaryRow>, sqlx::Error> {
+    sqlx::query_as::<_, FullSummaryRow>(
+        r#"
+        SELECT d.source_path, d.source_hash,
+               s.tldr, s.title, s.tags, s.entities, s.topics, s.relationships, s.word_count, s.created_at
+        FROM documents d
+        JOIN summaries s ON s.document_id = d.id
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn get_summary_by_source_path(
     pool: &PgPool,
     workspace_id: Uuid,

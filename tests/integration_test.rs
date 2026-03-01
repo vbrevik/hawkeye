@@ -17,7 +17,7 @@ use hawkeye::{
         RedisQueue,
     },
     features::search::facets::handle_facets,
-    features::search::handler::handle_search,
+    features::search::handler::{handle_search, handle_reindex},
     features::search::SearchIndexer,
     features::semantic::EmbedClient,
     features::semantic::MilvusClient,
@@ -1173,4 +1173,109 @@ async fn test_db_migrations_and_document_crud() {
         .execute(&pool)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn test_reindex_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
+    sqlx::migrate!().run(&pg_pool).await.unwrap();
+
+    let workspace_id = DEFAULT_WORKSPACE_ID;
+
+    // Insert 3 documents + summaries into Postgres
+    let titles = ["OAuth2 Setup Guide", "K8s Deployment", "Rust Ownership"];
+    let tldrs = [
+        "Guide to setting up OAuth2 authentication",
+        "Steps for deploying to Kubernetes cluster",
+        "Introduction to Rust ownership and borrowing",
+    ];
+    let tags_list: [Vec<String>; 3] = [
+        vec!["auth".into(), "oauth2".into()],
+        vec!["kubernetes".into(), "devops".into()],
+        vec!["rust".into(), "programming".into()],
+    ];
+    let sources = ["auth.md", "deploy.md", "rust.md"];
+
+    let mut doc_ids = Vec::new();
+    for i in 0..3 {
+        let doc = documents::upsert_document(
+            &pg_pool,
+            workspace_id,
+            &format!("/tmp/test/{}", sources[i]),
+            &format!("sha256:reindex{}", i),
+            Some(100),
+        )
+        .await
+        .unwrap();
+        documents::insert_summary(
+            &pg_pool,
+            &documents::InsertSummary {
+                document_id: doc.id,
+                tldr: tldrs[i],
+                title: titles[i],
+                tags: &tags_list[i],
+                entities: &[],
+                topics: &[],
+                relationships: &[],
+                word_count: 100,
+            },
+        )
+        .await
+        .unwrap();
+        doc_ids.push(doc.id);
+    }
+
+    // Build app with /search and /reindex
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let app = Router::new()
+        .route("/search", get(handle_search))
+        .route("/reindex", post(handle_reindex))
+        .with_state(state);
+
+    // 1. Search should return nothing (index is empty)
+    let (status, body) = get_request(app.clone(), "/search?q=OAuth2").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(results.is_empty(), "Expected empty index before reindex");
+
+    // 2. POST /reindex — should rebuild from Postgres
+    let (status, body) = post_json(app.clone(), "/reindex", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        resp["indexed"].as_u64().unwrap() >= 3,
+        "Expected at least 3 indexed documents"
+    );
+
+    // 3. Search should now find documents
+    let (status, body) = get_request(app.clone(), "/search?q=OAuth2").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(!results.is_empty(), "Expected search results after reindex");
+    assert_eq!(results[0]["file"], "auth.md");
+
+    let (status, body) = get_request(app.clone(), "/search?q=kubernetes").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(!results.is_empty(), "Expected search results for kubernetes");
+    assert_eq!(results[0]["file"], "deploy.md");
+
+    // Clean up test data
+    for doc_id in &doc_ids {
+        sqlx::query("DELETE FROM summaries WHERE document_id = $1")
+            .bind(doc_id)
+            .execute(&pg_pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM documents WHERE id = $1")
+            .bind(doc_id)
+            .execute(&pg_pool)
+            .await
+            .unwrap();
+    }
 }

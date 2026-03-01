@@ -32,13 +32,14 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `features/ingest/worker.rs` — Process single file (LLM → Postgres → Tantivy → embeddings → Milvus)
 - `features/queue/stream.rs` — RedisQueue (XADD, XREADGROUP, XACK, cancel, status)
 - `features/queue/consumer.rs` — spawn_consumers(), consumer loop with graceful shutdown
-- `features/search/handler.rs` — `GET /search` full-text search via Tantivy
-- `features/search/indexer.rs` — Tantivy full-text index read/write
+- `features/search/handler.rs` — `GET /search` full-text search via Tantivy, `POST /reindex` rebuild Tantivy index from Postgres
+- `features/search/indexer.rs` — Tantivy full-text index read/write (`clear_all`, `index_summaries` batch, `index_summary` single)
 - `features/search/facets.rs` — `GET /facets` tag/topic/entity frequency counts
 - `features/semantic/handler.rs` — `GET /search/semantic` vector search via Milvus + bge-m3 embeddings
 - `features/semantic/embed_client.rs` — bge-m3 embedding sidecar HTTP client (EmbedClient) + text chunking
 - `features/semantic/milvus.rs` — Milvus vector DB REST API client (collection mgmt, upsert, search)
 - `features/summary/handler.rs` — `GET /summary/{file}` single file summary from Postgres
+- `shared/db/documents.rs` also exports `get_all_summaries()` — cross-workspace joined query for reindex
 - `features/summary/types.rs` — `Summary`, `Relationship`, `RelationType` structs
 - `features/browse/handler.rs` — `GET /browse` filesystem directory listing with md_file_count
 - `features/graph/neo4j.rs` — Neo4jClient (connect, write_document_graph, query_entity 2-hop, query_document, ensure_indexes)
@@ -145,6 +146,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Auth middleware checks `revoked_at IS NULL` — revoked keys get a clear "API key has been revoked" 401 message
 - `POST /workspaces` and `POST /api-keys` are intentionally unauthenticated (bootstrap flow) — don't add auth middleware to these routes
 - Settings page (`/settings`) uses a 3-step wizard: create workspace → generate key → view docs. The API key is stored in the browser via `setAuthToken()` and included in subsequent `apiFetch()` calls
+- `POST /reindex` clears the entire Tantivy index and rebuilds from all Postgres summaries (cross-workspace). The indexer mutex is held during clear + batch write, so search queries will briefly block. The sidebar "Rebuild search index" button uses two-click confirmation to prevent accidental triggers
 - Running server holds Tantivy index lock — use `POST /shutdown` or `kill` (SIGTERM) instead of `kill -9` to release it cleanly
 - LLM prompt extracts relationships in the same call as summaries — `LlmOutput.relationships` uses `#[serde(default)]` so missing field defaults to `[]`
 - `RelationType` enum uses `#[serde(other)]` on `Other` variant to handle unknown relationship types from the LLM gracefully

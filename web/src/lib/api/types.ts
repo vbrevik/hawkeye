@@ -120,6 +120,10 @@ export interface ShutdownResponse {
 	message: string;
 }
 
+export interface ReindexResponse {
+	indexed: number;
+}
+
 export interface CreateWorkspaceResponse {
 	id: string;
 	name: string;

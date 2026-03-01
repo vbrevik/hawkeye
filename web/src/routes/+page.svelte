@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { SearchResult, Facets } from '$lib/api/types';
-	import { search, fetchFacets } from '$lib/api/search';
+	import { search, fetchFacets, reindex } from '$lib/api/search';
 	import { cancelJobs } from '$lib/api/ingest';
 	import { startPolling, stopPolling, queueStatus } from '$lib/stores/status';
 	import { connectEvents, disconnectEvents } from '$lib/features/events/useEvents';
@@ -40,6 +40,10 @@
 
 	let cancelConfirm = $state(false);
 	let cancelTimer: ReturnType<typeof setTimeout> | null = null;
+
+	let reindexing = $state(false);
+	let reindexConfirm = $state(false);
+	let reindexTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/* Sidebar collapsible state */
 	let showIngest = $state(false);
@@ -120,6 +124,26 @@
 		}
 	}
 
+	async function handleReindex() {
+		if (!reindexConfirm) {
+			reindexConfirm = true;
+			reindexTimer = setTimeout(() => { reindexConfirm = false; }, 3000);
+			return;
+		}
+		if (reindexTimer) clearTimeout(reindexTimer);
+		reindexConfirm = false;
+		reindexing = true;
+		try {
+			const result = await reindex();
+			addToast(`Rebuilt search index — ${result.indexed} document${result.indexed !== 1 ? 's' : ''} indexed`, 'success');
+			await refreshFacets();
+		} catch (e) {
+			addToast(`Reindex failed: ${e instanceof Error ? e.message : 'Unknown'}`, 'error');
+		} finally {
+			reindexing = false;
+		}
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
@@ -147,6 +171,7 @@
 			stopPolling();
 			disconnectEvents();
 			if (cancelTimer) clearTimeout(cancelTimer);
+			if (reindexTimer) clearTimeout(reindexTimer);
 		};
 	});
 </script>
@@ -239,6 +264,37 @@
 				</button>
 			</div>
 		{/if}
+
+		<div class="sidebar-divider"></div>
+
+		<button
+			class="btn--tool"
+			class:confirm={reindexConfirm}
+			class:running={reindexing}
+			onclick={handleReindex}
+			disabled={reindexing}
+		>
+			{#if reindexing}
+				<svg class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+				</svg>
+				Rebuilding…
+			{:else if reindexConfirm}
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+					<path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+					<path d="M16 16h5v5"/>
+				</svg>
+				Confirm rebuild?
+			{:else}
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+					<path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+					<path d="M16 16h5v5"/>
+				</svg>
+				Rebuild search index
+			{/if}
+		</button>
 	</aside>
 
 	<!-- Results Column -->
@@ -410,6 +466,35 @@
 	.btn--ghost.confirm {
 		border-color: rgba(248, 113, 113, 0.5); color: var(--red);
 		background: rgba(248, 113, 113, 0.08);
+	}
+
+	/* ── Tool button ── */
+	.btn--tool {
+		width: 100%; display: flex; align-items: center; gap: 6px;
+		background: transparent; border: 1px solid var(--border-subtle);
+		border-radius: var(--r-sm); color: var(--text-3); font-size: 11px;
+		padding: 7px 10px; cursor: pointer; font-weight: 500;
+		transition: all var(--duration-fast); font-family: var(--font);
+	}
+	.btn--tool:hover {
+		border-color: rgba(99, 102, 241, 0.3); color: var(--accent-hover);
+		background: var(--accent-dim);
+	}
+	.btn--tool.confirm {
+		border-color: rgba(99, 102, 241, 0.4); color: var(--accent-hover);
+		background: var(--accent-dim);
+	}
+	.btn--tool.running {
+		border-color: rgba(99, 102, 241, 0.25); color: var(--accent);
+		background: var(--accent-dim); cursor: default;
+	}
+	.btn--tool:disabled { opacity: 0.7; }
+	.btn--tool .spin {
+		animation: spin 1s linear infinite;
+	}
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
 	}
 
 	/* ── Results Column ── */
