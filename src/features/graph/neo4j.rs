@@ -353,3 +353,194 @@ pub fn build_relationship_tuples(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::features::summary::types::RelationType;
+    use crate::features::summary::Relationship;
+
+    // --- node_id ---
+
+    #[test]
+    fn test_node_id_basic() {
+        assert_eq!(node_id("entity", "Rust"), "entity:Rust");
+    }
+
+    #[test]
+    fn test_node_id_lowercases_type() {
+        assert_eq!(node_id("Entity", "OAuth2"), "entity:OAuth2");
+        assert_eq!(node_id("DOCUMENT", "doc-123"), "document:doc-123");
+    }
+
+    #[test]
+    fn test_node_id_preserves_name_case() {
+        assert_eq!(node_id("tag", "MachineLearning"), "tag:MachineLearning");
+    }
+
+    // --- rel_type_str ---
+
+    #[test]
+    fn test_rel_type_str_all_variants() {
+        assert_eq!(rel_type_str(&RelationType::Owns), "owns");
+        assert_eq!(rel_type_str(&RelationType::DependsOn), "depends_on");
+        assert_eq!(rel_type_str(&RelationType::Manages), "manages");
+        assert_eq!(rel_type_str(&RelationType::Uses), "uses");
+        assert_eq!(rel_type_str(&RelationType::CreatedBy), "created_by");
+        assert_eq!(rel_type_str(&RelationType::PartOf), "part_of");
+        assert_eq!(rel_type_str(&RelationType::RelatedTo), "related_to");
+        assert_eq!(rel_type_str(&RelationType::LocatedIn), "located_in");
+        assert_eq!(rel_type_str(&RelationType::MemberOf), "member_of");
+        assert_eq!(rel_type_str(&RelationType::Produces), "produces");
+        assert_eq!(rel_type_str(&RelationType::Other), "other");
+    }
+
+    // --- build_relationship_tuples ---
+
+    #[test]
+    fn test_build_relationship_tuples_empty() {
+        let tuples = build_relationship_tuples(&[]);
+        assert!(tuples.is_empty());
+    }
+
+    #[test]
+    fn test_build_relationship_tuples_single() {
+        let rels = vec![Relationship {
+            from: "Rust".to_string(),
+            rel: RelationType::Uses,
+            to: "Ownership".to_string(),
+            context: "core concept".to_string(),
+        }];
+        let tuples = build_relationship_tuples(&rels);
+        assert_eq!(tuples.len(), 1);
+        assert_eq!(tuples[0].0, "Rust");
+        assert_eq!(tuples[0].1, "uses");
+        assert_eq!(tuples[0].2, "Ownership");
+        assert_eq!(tuples[0].3, "core concept");
+    }
+
+    #[test]
+    fn test_build_relationship_tuples_multiple() {
+        let rels = vec![
+            Relationship {
+                from: "Axum".to_string(),
+                rel: RelationType::DependsOn,
+                to: "Tokio".to_string(),
+                context: "async runtime".to_string(),
+            },
+            Relationship {
+                from: "Hawkeye".to_string(),
+                rel: RelationType::CreatedBy,
+                to: "Developer".to_string(),
+                context: String::new(),
+            },
+        ];
+        let tuples = build_relationship_tuples(&rels);
+        assert_eq!(tuples.len(), 2);
+        assert_eq!(tuples[0].1, "depends_on");
+        assert_eq!(tuples[1].1, "created_by");
+        assert_eq!(tuples[1].3, "");
+    }
+
+    // --- GraphNode serialization ---
+
+    #[test]
+    fn test_graph_node_json_with_source_path() {
+        let node = GraphNode {
+            id: "entity:Rust".to_string(),
+            label: "Rust".to_string(),
+            node_type: "entity".to_string(),
+            source_path: Some("/docs/rust.md".to_string()),
+        };
+        let json = serde_json::to_value(&node).unwrap();
+        assert_eq!(json["id"], "entity:Rust");
+        assert_eq!(json["label"], "Rust");
+        assert_eq!(json["type"], "entity");
+        assert_eq!(json["source_path"], "/docs/rust.md");
+        assert!(json.get("node_type").is_none());
+    }
+
+    #[test]
+    fn test_graph_node_json_without_source_path() {
+        let node = GraphNode {
+            id: "tag:auth".to_string(),
+            label: "auth".to_string(),
+            node_type: "tag".to_string(),
+            source_path: None,
+        };
+        let json = serde_json::to_value(&node).unwrap();
+        assert!(json.get("source_path").is_none());
+    }
+
+    // --- GraphEdge serialization ---
+
+    #[test]
+    fn test_graph_edge_json_with_context() {
+        let edge = GraphEdge {
+            source: "entity:Rust".to_string(),
+            target: "entity:Ownership".to_string(),
+            label: "RELATED_TO".to_string(),
+            context: Some("core concept".to_string()),
+        };
+        let json = serde_json::to_value(&edge).unwrap();
+        assert_eq!(json["source"], "entity:Rust");
+        assert_eq!(json["target"], "entity:Ownership");
+        assert_eq!(json["label"], "RELATED_TO");
+        assert_eq!(json["context"], "core concept");
+    }
+
+    #[test]
+    fn test_graph_edge_json_without_context() {
+        let edge = GraphEdge {
+            source: "document:doc1".to_string(),
+            target: "tag:auth".to_string(),
+            label: "HAS_TAG".to_string(),
+            context: None,
+        };
+        let json = serde_json::to_value(&edge).unwrap();
+        assert!(json.get("context").is_none());
+    }
+
+    // --- GraphResponse serialization ---
+
+    #[test]
+    fn test_graph_response_empty() {
+        let resp = GraphResponse {
+            nodes: vec![],
+            edges: vec![],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json["nodes"].as_array().unwrap().is_empty());
+        assert!(json["edges"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_graph_response_roundtrip() {
+        let resp = GraphResponse {
+            nodes: vec![
+                GraphNode {
+                    id: "document:doc1".to_string(),
+                    label: "Auth Guide".to_string(),
+                    node_type: "document".to_string(),
+                    source_path: Some("/docs/auth.md".to_string()),
+                },
+                GraphNode {
+                    id: "entity:OAuth2".to_string(),
+                    label: "OAuth2".to_string(),
+                    node_type: "entity".to_string(),
+                    source_path: None,
+                },
+            ],
+            edges: vec![GraphEdge {
+                source: "document:doc1".to_string(),
+                target: "entity:OAuth2".to_string(),
+                label: "MENTIONS".to_string(),
+                context: None,
+            }],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(json["edges"].as_array().unwrap().len(), 1);
+        assert_eq!(json["edges"][0]["label"], "MENTIONS");
+    }
+}
