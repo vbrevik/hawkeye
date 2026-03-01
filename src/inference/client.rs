@@ -125,7 +125,7 @@ impl InferenceClient {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: 1024,
+            max_tokens: 2048,
         };
 
         let start = Instant::now();

@@ -9,6 +9,7 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Build: `cargo build --release`
 - Run: `cargo run --release` (default port 7700)
 - Start MLX sidecar: `./scripts/start_mlx.sh` (port 7701)
+- Start embedding sidecar: `./scripts/start_embed.sh` (port 7703)
 - Infrastructure: `docker compose up -d` (Redis, Postgres, etcd, MinIO, Milvus, Neo4j)
 - Test: `cargo test`
 - Integration tests only: `cargo test --test integration_test`
@@ -25,6 +26,7 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - `src/scanner/` — Filesystem `.md` file discovery
 - `src/search/` — Tantivy full-text index
 - `src/db/` — Postgres CRUD (documents, summaries) via sqlx `query_as` runtime checking
+- `src/embedding/` — bge-m3 embedding sidecar HTTP client (EmbedClient) + text chunking
 - `src/summary/` — `Summary`, `Relationship`, `RelationType` structs (types only; storage is in Postgres via `src/db/`)
 - `tests/integration_test.rs` — Integration tests
 - `test_data/` — Sample markdown files for testing
@@ -59,6 +61,8 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
 - Model variants: 4-bit (~13GB RAM) vs 8-bit (~22GB) — pass model arg to start script: `./scripts/start_mlx.sh InferenceIllusionist/gpt-oss-20b-MLX-4bit`
+- Embedding sidecar runs on **7703** by default, serves `BAAI/bge-m3` (1024-dim vectors) via `infinity-emb` with OpenAI-compatible `/v1/embeddings` endpoint
+- `EmbedClient` chunks text into ~512-token overlapping windows (2048 chars, 50% overlap) before embedding — max chunk size is approximate (1 token ≈ 4 chars)
 - Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
 - `POST /cancel` vs `POST /shutdown`: cancel discards **queued jobs** but keeps the server running; shutdown stops the **entire server process**

@@ -1,6 +1,7 @@
 pub mod api;
 pub mod config;
 pub mod db;
+pub mod embedding;
 pub mod inference;
 pub mod queue;
 pub mod scanner;

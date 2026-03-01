@@ -55,6 +55,14 @@ pub struct AppConfig {
     /// Neo4j HTTP URL
     #[arg(long, default_value = "http://localhost:7475")]
     pub neo4j_url: String,
+
+    /// Embedding sidecar URL (infinity-emb serving bge-m3)
+    #[arg(long, default_value = "http://localhost:7703")]
+    pub embed_url: String,
+
+    /// Embedding model name (passed in /v1/embeddings requests)
+    #[arg(long, default_value = "BAAI/bge-m3")]
+    pub embed_model: String,
 }
 
 #[cfg(test)]
@@ -71,5 +79,7 @@ mod tests {
         assert_eq!(cfg.minio_url, "http://localhost:9000");
         assert_eq!(cfg.milvus_url, "http://localhost:19530");
         assert_eq!(cfg.neo4j_url, "http://localhost:7475");
+        assert_eq!(cfg.embed_url, "http://localhost:7703");
+        assert_eq!(cfg.embed_model, "BAAI/bge-m3");
     }
 }
