@@ -125,7 +125,7 @@ impl InferenceClient {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: 2048,
+            max_tokens: 16384,
         };
 
         let start = Instant::now();
@@ -145,14 +145,7 @@ impl InferenceClient {
 
         let chat_response: ChatResponse = response.json().await?;
         let raw_content = &chat_response.choices[0].message.content;
-
-        // Strip markdown fences if LLM wraps output
-        let cleaned = raw_content
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
+        let cleaned = extract_json_content(raw_content);
 
         let output: LlmOutput = serde_json::from_str(cleaned)?;
 
@@ -175,6 +168,40 @@ impl InferenceClient {
             word_count,
         })
     }
+}
+
+/// Extract the JSON payload from LLM output, handling:
+/// - Channel tokens (gpt-oss models): `<|channel|>final<|message|>{json}`
+/// - Markdown fences: ` ```json ... ``` `
+/// - Plain JSON output
+fn extract_json_content(raw: &str) -> &str {
+    const FINAL_MARKER: &str = "<|channel|>final<|message|>";
+
+    let after_channel = if let Some(pos) = raw.rfind(FINAL_MARKER) {
+        &raw[pos + FINAL_MARKER.len()..]
+    } else {
+        raw
+    };
+
+    // Strip trailing channel/control tokens (e.g. <|end|>, <|start|>)
+    let without_trailing = if let Some(pos) = after_channel.rfind("<|") {
+        let candidate = after_channel[..pos].trim_end();
+        // Only strip if what remains looks like it ends with JSON
+        if candidate.ends_with('}') || candidate.ends_with(']') {
+            candidate
+        } else {
+            after_channel
+        }
+    } else {
+        after_channel
+    };
+
+    without_trailing
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
 }
 
 #[cfg(test)]
@@ -319,6 +346,76 @@ mod tests {
         let prompts = captured.lock().unwrap();
         assert!(!prompts[0].starts_with("/no_think"), "non-Qwen3 model should not have /no_think prefix");
         assert!(prompts[1].starts_with("/no_think"), "Qwen3 model should have /no_think prefix");
+    }
+
+    #[test]
+    fn test_extract_json_plain() {
+        let input = r#"{"tldr": "A summary.", "title": "Title", "tags": [], "entities": [], "topics": []}"#;
+        let result = extract_json_content(input);
+        assert!(result.starts_with('{'), "plain JSON should pass through: {result}");
+    }
+
+    #[test]
+    fn test_extract_json_with_markdown_fences() {
+        let input = "```json\n{\"tldr\": \"A summary.\"}\n```";
+        let result = extract_json_content(input);
+        assert!(result.starts_with('{'), "should strip markdown fences: {result}");
+    }
+
+    #[test]
+    fn test_extract_json_with_channel_tokens() {
+        let input = "<|channel|>analysis<|message|>Some reasoning about the doc...\n<|end|><|start|>assistant<|channel|>final<|message|>{\"tldr\": \"A summary.\", \"title\": \"Title\", \"tags\": [], \"entities\": [], \"topics\": []}";
+        let result = extract_json_content(input);
+        assert!(result.starts_with('{'), "should extract after final marker: {result}");
+        let parsed: serde_json::Value = serde_json::from_str(result).unwrap();
+        assert_eq!(parsed["tldr"], "A summary.");
+    }
+
+    #[test]
+    fn test_extract_json_with_channel_tokens_and_trailing_end() {
+        let input = "<|channel|>analysis<|message|>Reasoning<|end|><|start|>assistant<|channel|>final<|message|>{\"tldr\": \"Done.\", \"title\": \"T\", \"tags\": [], \"entities\": [], \"topics\": []}<|end|>";
+        let result = extract_json_content(input);
+        assert!(result.starts_with('{'), "should strip trailing <|end|>: {result}");
+        assert!(result.ends_with('}'), "should end with }}: {result}");
+        let parsed: serde_json::Value = serde_json::from_str(result).unwrap();
+        assert_eq!(parsed["tldr"], "Done.");
+    }
+
+    async fn mock_chat_channel_tokens() -> Json<serde_json::Value> {
+        Json(json!({
+            "choices": [{
+                "message": {
+                    "content": "<|channel|>analysis<|message|>Let me analyze this document.\n<|end|><|start|>assistant<|channel|>final<|message|>{\"tldr\": \"Auth migration plan.\", \"title\": \"Auth Plan\", \"tags\": [\"auth\"], \"entities\": [\"Keycloak\"], \"topics\": [\"authentication\"], \"relationships\": [{\"from\": \"Keycloak\", \"rel\": \"manages\", \"to\": \"tokens\", \"context\": \"token issuance\"}]}"
+                }
+            }]
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_summarize_with_channel_tokens() {
+        let app = Router::new().route("/v1/chat/completions", post(mock_chat_channel_tokens));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = InferenceClient::new(
+            &format!("http://{}", addr),
+            "InferenceIllusionist/gpt-oss-20b-MLX-4bit",
+            0.1,
+        )
+        .unwrap();
+        let result = client
+            .summarize("auth.md", "OAuth2 migration plan", "sha256:abc")
+            .await;
+
+        let summary = result.unwrap();
+        assert_eq!(summary.title, "Auth Plan");
+        assert_eq!(summary.tags, vec!["auth"]);
+        assert_eq!(summary.entities, vec!["Keycloak"]);
+        assert_eq!(summary.relationships.len(), 1);
+        assert_eq!(summary.relationships[0].from, "Keycloak");
     }
 
     #[tokio::test]
