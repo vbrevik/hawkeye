@@ -46,34 +46,19 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 - Clippy clean (`-D warnings`)
 - Integration test suite
 
+### Postgres Schema + sqlx Integration (v2 Task 2) ✅
+- sqlx 0.8 with runtime `query_as` (no compile-time `query!` macro)
+- Initial migration: 6 tables (workspaces, users, api_keys, documents, summaries, audit_log)
+- Default workspace seeded (UUID nil) for single-user mode
+- `PgPool` wired into `AppState`, connects and runs migrations on startup
+- `src/db/documents.rs` with upsert_document, get_document_by_path, get_source_hashes, insert_summary, get_summary_by_document
+- Integration test: migrations + document CRUD against real Postgres
+
 ---
 
 ## Remaining Backlog
 
 ### Phase 1: Postgres Migration
-
-#### Task 2 — Postgres schema + sqlx integration
-**Priority:** High | **Effort:** Medium
-
-**GOAL:** `cargo test` passes including a new integration test that runs migrations against real Postgres and inserts/queries a document row. `PgPool` is wired into `AppState`. The app connects to Postgres on startup and runs migrations automatically.
-
-**CONSTRAINTS:**
-- Use `sqlx` 0.8 with `query_as` (runtime query checking, NOT compile-time `query!` macro — keeps build simple without a live DB)
-- Use `uuid` 1 with `v4` + `serde` features
-- All schema changes in `migrations/` directory, numbered sequentially
-- Schema: 6 tables — workspaces, users, api_keys, documents, summaries, audit_log
-- Default workspace (UUID nil) for single-user mode
-- No changes to existing API behavior — additive only
-
-**FAILURE CONDITIONS:**
-- `cargo build` fails
-- Any existing test breaks
-- `sqlx::PgPool::connect()` not called in `main.rs`
-- Migration doesn't create all 6 tables
-- No `db` module integration test
-- Uses compile-time `query!` macro instead of `query_as`
-
----
 
 #### Task 3 — Postgres replaces .summary.json sidecars
 **Priority:** High | **Effort:** Large
@@ -300,8 +285,8 @@ Tasks 4, 5, and 9 can be done in parallel with their predecessors.
 
 ## Task Tracking
 
-**Current Task:** None
-**Next Task:** Task 2 — Postgres schema + sqlx integration
+**Current Task:** Task 3 — Postgres replaces .summary.json sidecars
+**Next Task:** Task 4 — Merged LLM prompt with relationship extraction
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests
 
