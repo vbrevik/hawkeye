@@ -70,3 +70,47 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Queue status (`GET /status`) is derived from Redis counters (`hawkeye:stats:{ws}:total/completed/failed`), not in-memory state
 - `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
+
+## Tech Debt Scan
+
+Trigger: user says "scan tech debt", "tech debt audit", "debt scan", "code health check", or "baseline scan".
+
+### Procedure
+
+Run all checks **in parallel** for speed:
+
+1. **Codebase size** — `find src -name '*.rs' -exec wc -l {} + | sort -rn | head -20` (flag files >300 LOC)
+2. **Clippy + tests** — `cargo clippy -- -D warnings` and `cargo test --lib | tail -30`
+3. **Code smell search** (code-searcher) — `#[allow(dead_code)]`, `unwrap()` in non-test code, `expect(` in runtime paths, `todo!()`, `unimplemented!()`, `FIXME`, `HACK`, `unsafe`
+4. **Hardcoded values** — `Uuid::nil()`, hardcoded ports/URLs, magic numbers
+5. **Error handling** — `(StatusCode, String)` raw tuples, handlers with no error path, missing `tracing::error!` in error branches
+6. **Test coverage** — cross-reference `grep 'pub async fn handle_'` against `grep 'async fn test_'` to find untested handlers
+7. **TODOs/unsafe** — `grep -rn 'TODO\|FIXME\|HACK\|XXX' src/` and `grep -rn 'unsafe' src/`
+
+For **TypeScript/SvelteKit** (when `web/` exists): `any` types, `// @ts-ignore`, components >150 LOC, raw `fetch()`, `console.log` in production.
+
+### Report Format
+
+Produce a structured report with:
+- **Summary table** — file count, LOC, test count, clippy status, TODOs, unsafe blocks
+- **🔴 Blockers** — will cause bugs/panics
+- **🟡 Issues** — each with: what, where (file:line + count), risk, fix effort
+- **⚪ Minor** — style/preference
+- **✅ Clean areas** — explicitly verified healthy
+- **Priority actions table** — P1 (now), P2 (now), P3 (next task), Defer (milestone)
+
+### After Report
+
+If `docs/TECH_DEBT_BASELINE.md` exists, compare against it (new issues, resolved issues, trends). Then offer:
+1. Fix P1-P2 quick wins now
+2. Save as baseline to `docs/TECH_DEBT_BASELINE.md`
+3. Just note it and continue
+
+### Recurring Hygiene (every task)
+
+1. Boy Scout Rule — leave files cleaner than you found them
+2. No new `#[allow(dead_code)]`
+3. `cargo clippy -- -D warnings` before every commit
+4. Every handler gets integration test; every client gets unit test
+5. Update knowledge.md after architectural changes
+6. Extract to `shared/` after 3+ occurrences of same pattern

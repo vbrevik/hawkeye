@@ -4,6 +4,7 @@ use crate::scanner::files::ScannedFile;
 use crate::search::indexer::SearchIndexer;
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -77,6 +78,10 @@ pub async fn process_file(
                     "inference failed, retrying"
                 );
                 last_error = Some(e);
+                if attempt < MAX_RETRIES {
+                    let backoff = Duration::from_secs(1 << (attempt - 1));
+                    tokio::time::sleep(backoff).await;
+                }
             }
         }
     }
