@@ -58,26 +58,13 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 
 ## Remaining Backlog
 
-### Phase 1: Postgres Migration
-
-#### Task 3 — Postgres replaces .summary.json sidecars
-**Priority:** High | **Effort:** Large
-
-**GOAL:** After `POST /ingest`, document records and summaries are written to Postgres (not `.summary.json` files). Skip logic reads SHA-256 hashes from Postgres instead of checking the filesystem. `GET /summary/:file` reads from Postgres. The `store.rs` sidecar functions are deleted.
-
-**CONSTRAINTS:**
-- Scanner becomes async or accepts a pre-fetched `HashSet<String>` of known SHA-256 hashes from Postgres
-- Use default workspace UUID (`Uuid::nil()`) for all operations — multi-workspace comes in Task 10
-- `Summary` struct moves from `store.rs` to a new `summary/types.rs`
-- Tantivy indexing stays unchanged — `search/indexer.rs` is not modified
-- All existing scanner tests must be updated (no `.summary.json` references)
-
-**FAILURE CONDITIONS:**
-- `.summary.json` files are still written anywhere in the codebase
-- `summary/store.rs` still contains `write_summary` or `read_summary`
-- `cargo test` fails
-- Skip logic still checks the filesystem instead of Postgres
-- `GET /summary/:file` returns 404 after a successful ingest
+### Postgres Replaces .summary.json Sidecars (v2 Task 3) ✅
+- Worker writes documents + summaries to Postgres instead of `.summary.json` files
+- Scanner accepts pre-fetched hash map from Postgres for skip logic
+- `GET /summary/:file` reads from Postgres via joined query
+- `summary/store.rs` deleted, `Summary` struct moved to `summary/types.rs`
+- `get_summary_by_source_path` and `get_source_hashes` added to db layer
+- All unit tests and integration tests updated for Postgres-backed flow
 
 ---
 
@@ -285,8 +272,8 @@ Tasks 4, 5, and 9 can be done in parallel with their predecessors.
 
 ## Task Tracking
 
-**Current Task:** Task 3 — Postgres replaces .summary.json sidecars
-**Next Task:** Task 4 — Merged LLM prompt with relationship extraction
+**Current Task:** Task 4 — Merged LLM prompt with relationship extraction
+**Next Task:** Task 5 — Redis Streams replace in-memory queue
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests
 
