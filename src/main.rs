@@ -71,7 +71,6 @@ async fn main() {
     tracing::info!(workers = config.workers, "consumers started");
 
     let state = Arc::new(AppState {
-        inference,
         redis_pool,
         indexer,
         config: config.clone(),
