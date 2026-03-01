@@ -2,7 +2,7 @@
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon.
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon. Default LLM: `mlx-community/Qwen3.5-35B-A3B-4bit`.
 
 ## Quickstart
 
@@ -136,7 +136,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Integration tests use `Uuid::new_v4()` workspace IDs for Redis key isolation between parallel tests
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
-- Model variants: 4-bit (~4GB RAM for 7B) vs 8-bit (~8GB) — pass model arg to start script: `./scripts/start_mlx.sh mlx-community/Qwen2.5-7B-Instruct-4bit`
+- Default model: `mlx-community/Qwen3.5-35B-A3B-4bit` (~20GB RAM, MoE with 3B active params) — override with: `./scripts/start_mlx.sh <model-id>`
 - `EmbedClient` chunks text into ~512-token overlapping windows (2048 chars, 50% overlap) before embedding — max chunk size is approximate (1 token ≈ 4 chars)
 - Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
