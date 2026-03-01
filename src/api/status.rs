@@ -4,12 +4,12 @@ use axum::extract::State;
 use axum::Json;
 use reqwest::Client;
 use serde::Serialize;
+use crate::config::DEFAULT_WORKSPACE_ID;
 use std::sync::Arc;
 use std::time::Duration;
-use uuid::Uuid;
 
 pub async fn handle_status(State(state): State<Arc<AppState>>) -> Json<QueueStatus> {
-    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
     match queue.read_status().await {
         Ok(status) => Json(status),
         Err(e) => {

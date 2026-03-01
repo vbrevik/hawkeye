@@ -1,4 +1,9 @@
 use clap::Parser;
+use uuid::Uuid;
+
+/// Default workspace ID for single-tenant mode.
+/// All documents and queries use this until multi-tenancy (Task 10) lands.
+pub const DEFAULT_WORKSPACE_ID: Uuid = Uuid::nil();
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "hawkeye", about = "Local AI-powered markdown summarizer")]
@@ -14,6 +19,10 @@ pub struct AppConfig {
     /// MLX model name to use for inference
     #[arg(long, default_value = "mlx-community/Qwen2.5-7B-Instruct-4bit")]
     pub mlx_model: String,
+
+    /// LLM sampling temperature (0.0 = deterministic, 1.0 = creative)
+    #[arg(long, default_value = "0.1")]
+    pub temperature: f32,
 
     /// Number of concurrent workers
     #[arg(long, default_value = "4")]

@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated by sqlx::FromRow, read in integration tests
 pub struct DocumentRow {
     pub id: Uuid,
     pub workspace_id: Uuid,
@@ -16,7 +16,7 @@ pub struct DocumentRow {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields populated by sqlx::FromRow, read in integration tests
 pub struct SummaryRow {
     pub id: Uuid,
     pub document_id: Uuid,
@@ -56,7 +56,7 @@ pub async fn upsert_document(
     .await
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // used in integration tests
 pub async fn get_document_by_path(
     pool: &PgPool,
     workspace_id: Uuid,
@@ -145,7 +145,7 @@ pub async fn insert_summary(
     .await
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // used in integration tests
 pub async fn get_summary_by_document(
     pool: &PgPool,
     document_id: Uuid,

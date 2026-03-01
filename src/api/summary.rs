@@ -1,17 +1,17 @@
 use crate::api::AppState;
 use crate::db::documents;
 use crate::summary::{Relationship, Summary};
+use crate::config::DEFAULT_WORKSPACE_ID;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::sync::Arc;
-use uuid::Uuid;
 
 pub async fn handle_summary(
     State(state): State<Arc<AppState>>,
     Path(file): Path<String>,
 ) -> Result<Json<Summary>, (StatusCode, String)> {
-    let row = documents::get_summary_by_source_path(&state.pg_pool, Uuid::nil(), &file)
+    let row = documents::get_summary_by_source_path(&state.pg_pool, DEFAULT_WORKSPACE_ID, &file)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 

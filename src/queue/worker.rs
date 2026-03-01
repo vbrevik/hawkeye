@@ -1,3 +1,4 @@
+use crate::config::DEFAULT_WORKSPACE_ID;
 use crate::db::documents::{self, InsertSummary};
 use crate::inference::client::InferenceClient;
 use crate::scanner::files::ScannedFile;
@@ -6,7 +7,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 const MAX_RETRIES: usize = 3;
 
@@ -33,7 +33,7 @@ pub async fn process_file(
 
                 let doc = documents::upsert_document(
                     pool,
-                    Uuid::nil(),
+                    DEFAULT_WORKSPACE_ID,
                     &source_path,
                     &file.hash,
                     Some(file.size as i64),

@@ -11,7 +11,7 @@ use api::AppState;
 use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
-use config::AppConfig;
+use config::{AppConfig, DEFAULT_WORKSPACE_ID};
 use inference::client::InferenceClient;
 use queue::stream::RedisQueue;
 use search::indexer::SearchIndexer;
@@ -19,7 +19,6 @@ use sqlx::postgres::PgPoolOptions;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
-use uuid::Uuid;
 
 async fn shutdown_signal(mut shutdown_rx: watch::Receiver<bool>) {
     let ctrl_c = tokio::signal::ctrl_c();
@@ -72,7 +71,7 @@ async fn main() {
         .create_pool(Some(deadpool_redis::Runtime::Tokio1))
         .expect("Failed to create Redis pool");
 
-    let queue = RedisQueue::new(redis_pool.clone(), Uuid::nil());
+    let queue = RedisQueue::new(redis_pool.clone(), DEFAULT_WORKSPACE_ID);
     queue
         .ensure_group()
         .await
@@ -83,7 +82,10 @@ async fn main() {
     let indexer = SearchIndexer::new_in_dir(std::path::Path::new(&config.index_path))
         .expect("Failed to create search index");
 
-    let inference = Arc::new(InferenceClient::new(&config.mlx_url, &config.mlx_model));
+    let inference = Arc::new(
+        InferenceClient::new(&config.mlx_url, &config.mlx_model, config.temperature)
+            .expect("Failed to build inference client"),
+    );
     let indexer = Arc::new(Mutex::new(indexer));
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

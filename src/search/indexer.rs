@@ -20,7 +20,7 @@ pub struct SearchResult {
 pub struct SearchIndexer {
     index: Index,
     writer: IndexWriter,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // stored for potential future schema access
     schema: Schema,
     source_path: Field,
     tldr: Field,

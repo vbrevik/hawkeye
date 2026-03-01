@@ -215,7 +215,7 @@ impl RedisQueue {
         })
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // used in integration tests
     pub async fn cleanup(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.pool.get().await?;
         redis::cmd("DEL")

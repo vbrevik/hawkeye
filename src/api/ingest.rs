@@ -6,10 +6,10 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use crate::config::DEFAULT_WORKSPACE_ID;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct IngestRequest {
@@ -35,7 +35,7 @@ pub async fn handle_ingest(
         ));
     }
 
-    let hashes = get_source_hashes(&state.pg_pool, Uuid::nil())
+    let hashes = get_source_hashes(&state.pg_pool, DEFAULT_WORKSPACE_ID)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let known_hashes: HashMap<String, String> = hashes
@@ -49,7 +49,7 @@ pub async fn handle_ingest(
     let queued = scan_result.to_process.len();
     let skipped = scan_result.skipped;
 
-    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
     queue
         .publish_files(&scan_result.to_process)
         .await
@@ -65,7 +65,7 @@ pub async fn handle_ingest(
 pub async fn handle_cancel(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CancelResult>, (StatusCode, String)> {
-    let queue = RedisQueue::new(state.redis_pool.clone(), Uuid::nil());
+    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
     let result = queue
         .cancel()
         .await

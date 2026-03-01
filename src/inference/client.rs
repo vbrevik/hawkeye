@@ -69,20 +69,21 @@ pub struct InferenceClient {
     client: Client,
     base_url: String,
     model: String,
+    temperature: f32,
 }
 
 impl InferenceClient {
-    pub fn new(base_url: &str, model: &str) -> Self {
+    pub fn new(base_url: &str, model: &str, temperature: f32) -> Result<Self, reqwest::Error> {
         let client = Client::builder()
             .timeout(Duration::from_secs(120))
-            .build()
-            .expect("Failed to build HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
-        }
+            temperature,
+        })
     }
 
     pub async fn summarize(
@@ -123,7 +124,7 @@ impl InferenceClient {
                     content: format!("Filename: {}\n\n{}", filename, truncated),
                 },
             ],
-            temperature: 0.1,
+            temperature: self.temperature,
             max_tokens: 1024,
         };
 
@@ -205,7 +206,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model", 0.1).unwrap();
         let result = client
             .summarize("notes.md", "Meeting about OAuth2 migration", "sha256:abc")
             .await;
@@ -229,7 +230,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model", 0.1).unwrap();
         let result = client
             .summarize("notes.md", "Some content", "sha256:abc")
             .await;
@@ -261,7 +262,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model", 0.1).unwrap();
         let result = client
             .summarize("notes.md", "Some content", "sha256:abc")
             .await;
@@ -309,10 +310,10 @@ mod tests {
         });
         let url = format!("http://{}", addr);
 
-        let non_qwen3 = InferenceClient::new(&url, "mlx-community/Qwen2.5-7B-Instruct-4bit");
+        let non_qwen3 = InferenceClient::new(&url, "mlx-community/Qwen2.5-7B-Instruct-4bit", 0.1).unwrap();
         non_qwen3.summarize("a.md", "hello", "sha256:a").await.unwrap();
 
-        let qwen3 = InferenceClient::new(&url, "mlx-community/Qwen3-8B-Instruct-4bit");
+        let qwen3 = InferenceClient::new(&url, "mlx-community/Qwen3-8B-Instruct-4bit", 0.1).unwrap();
         qwen3.summarize("b.md", "world", "sha256:b").await.unwrap();
 
         let prompts = captured.lock().unwrap();
@@ -332,7 +333,7 @@ mod tests {
         let large_content = "word ".repeat(MAX_CONTENT_BYTES);
         assert!(large_content.len() > MAX_CONTENT_BYTES);
 
-        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model", 0.1).unwrap();
         let result = client
             .summarize("big.md", &large_content, "sha256:big")
             .await;

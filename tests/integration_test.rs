@@ -1,5 +1,6 @@
 use axum::{routing::post, Json, Router};
 use hawkeye::{
+    config::DEFAULT_WORKSPACE_ID,
     db::documents,
     inference::client::InferenceClient,
     queue::{
@@ -86,7 +87,7 @@ async fn test_full_pipeline() {
     let queue = RedisQueue::new(redis_pool.clone(), ws_id);
     queue.ensure_group().await.unwrap();
 
-    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model", 0.1).unwrap());
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
@@ -122,7 +123,7 @@ async fn test_full_pipeline() {
         let md_path = dir.path().join(format!("doc{}.md", i));
         let source_path = md_path.display().to_string();
 
-        let doc = documents::get_document_by_path(&pg_pool, Uuid::nil(), &source_path)
+        let doc = documents::get_document_by_path(&pg_pool, DEFAULT_WORKSPACE_ID, &source_path)
             .await
             .unwrap();
         assert!(doc.is_some(), "Missing document for doc{}.md", i);
@@ -181,7 +182,7 @@ async fn test_skip_logic_on_rerun() {
     let queue = RedisQueue::new(redis_pool.clone(), ws_id);
     queue.ensure_group().await.unwrap();
 
-    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model", 0.1).unwrap());
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
@@ -211,7 +212,7 @@ async fn test_skip_logic_on_rerun() {
     }
 
     // Second run — fetch known hashes from Postgres, all 3 should be skipped
-    let hashes = documents::get_source_hashes(&pg_pool, Uuid::nil())
+    let hashes = documents::get_source_hashes(&pg_pool, DEFAULT_WORKSPACE_ID)
         .await
         .unwrap();
     let known: HashMap<String, String> = hashes
@@ -271,7 +272,7 @@ async fn test_cancel_ingestion() {
     let queue = RedisQueue::new(redis_pool.clone(), ws_id);
     queue.ensure_group().await.unwrap();
 
-    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model"));
+    let inference = Arc::new(InferenceClient::new(&mlx_url, "mock-model", 0.1).unwrap());
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
@@ -326,7 +327,7 @@ async fn test_db_migrations_and_document_crud() {
     let pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
     sqlx::migrate!().run(&pool).await.unwrap();
 
-    let workspace_id = Uuid::nil();
+    let workspace_id = DEFAULT_WORKSPACE_ID;
 
     // Insert a document
     let doc = documents::upsert_document(
