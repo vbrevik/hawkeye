@@ -1,109 +1,122 @@
-# 🔍 Tech Debt Baseline — Hawkeye
+# Hawkeye Tech Debt Baseline
 
-**Date:** 2026-03-01
-**Commit:** c1323f1 → updated efc3302
-**Scanned:** 27 files, 3,224 LOC
+> Captured: Post-Task R1 + Tech Debt Audit 1 (after AppError refactor, integration tests, SvelteKit frontend)
+> Commit: `ab6fe30` on `feat/facets-browse-md-count`
 
-## Summary
+## Summary Dashboard
 
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| **Rust source files** | 27 | Manageable |
-| **Total LOC (src/)** | 3,224 | Small project |
-| **Integration test LOC** | 433 | Good coverage |
-| **Unit tests** | 26 passing | ✅ |
-| **Integration tests** | 4 passing | ✅ |
-| **Clippy** | Clean (`-D warnings`) | ✅ |
-| **TODOs/FIXMEs/HACKs** | 0 | ✅ |
-| **Unsafe blocks** | 0 | ✅ |
+| Metric | Value |
+|--------|-------|
+| Rust files | 35 |
+| Rust LOC | 4,697 |
+| TypeScript/Svelte files | 24 |
+| TypeScript/Svelte LOC | 1,643 |
+| Svelte components | 11 |
+| **Total project LOC** | **6,340** |
+| Unit tests | 39 passing ✅ |
+| Integration tests | 10 passing ✅ |
+| Clippy | ✅ Clean (`-D warnings`) |
+| unwrap() in prod | 0 ✅ |
+| expect() in prod | 0 ✅ |
+| TODO/FIXME/HACK | 0 ✅ |
+| unsafe blocks | 0 ✅ |
+| console.log (frontend) | 0 ✅ |
+| `any` type (TS) | 0 ✅ |
+| Handler test coverage | 8/12 (67%) |
 
-## Largest Files
+## Handler Test Coverage
 
-| File | LOC | Notes |
-|------|-----|-------|
-| `src/api/ui.rs` | 972 | Inline HTML monolith — deleted by Task 11 (SvelteKit) |
-| `src/queue/stream.rs` | 301 | RedisQueue — reasonable for its scope |
-| `src/search/indexer.rs` | 276 | Tantivy indexer — includes tests |
-| `src/inference/client.rs` | 211 | MLX client — includes tests |
-| `src/db/documents.rs` | 197 | Postgres CRUD — will grow with features |
-| `src/api/health.rs` | 181 | Health checks — includes tests |
+| Handler | Integration Test |
+|---------|-----------------|
+| handle_ingest | ✅ test_full_pipeline |
+| handle_cancel | ✅ test_cancel_ingestion |
+| handle_search | ✅ test_search_handler |
+| handle_facets | ✅ test_facets_handler |
+| handle_browse | ✅ test_browse_handler |
+| handle_summary | ✅ test_summary_handler |
+| handle_health | ✅ test_health_handler |
+| handle_status | ✅ test_status_handler |
+| handle_semantic_search | ❌ (needs embedding sidecar) |
+| handle_shutdown | ❌ (destructive — kills server) |
+| handle_mlx_status | ❌ (needs MLX sidecar) |
 
-## 🔴 Blockers
+## 🟡 MEDIUM — Remaining Issues
 
-None found.
+### 1. `#[allow(dead_code)]` — 6 instances across 3 files
 
-## 🟡 Issues
+| Location | Reason | Action |
+|----------|--------|--------|
+| `shared/db/documents.rs:7,19` | `DocumentRow`, `SummaryRow` — fields populated by sqlx::FromRow | Legitimate — keep |
+| `shared/db/documents.rs:59,148` | `get_document_by_path`, `get_summary_by_document` — used only in integration tests | Legitimate — `#[cfg(test)]` won't work for integration tests (external crate) |
+| `features/queue/stream.rs:218` | `cleanup()` — used only in integration tests | Same as above |
+| `features/search/indexer.rs:23` | `schema` field — stored for potential future use | Low risk, keep |
 
-### ~~1. `Uuid::nil()` hardcoded everywhere (9 occurrences)~~ ✅ RESOLVED (efc3302)
+### 2. Unbounded SELECTs — 2 genuine concerns
 
-- **Fix applied:** Extracted `DEFAULT_WORKSPACE_ID` constant in `src/config.rs`, replaced all 9 occurrences across 7 files
+| Query | Line | Risk |
+|-------|------|------|
+| `get_source_hashes` | documents.rs:90 | Medium — returns ALL hashes for workspace |
+| `get_all_summaries_brief` | documents.rs:179 | Medium — returns ALL summaries for workspace |
 
-### ~~2. `#[allow(dead_code)]` — 6 occurrences~~ ✅ RESOLVED (efc3302)
+Other SELECTs without LIMIT return single rows by unique constraint — not a concern.
 
-- **Fix applied:** Audited all 6 annotations — all are legitimate (structs populated by `sqlx::FromRow`, functions used in integration tests, field used internally). Added explanatory comments to each so intent is clear
+**Action:** Add pagination during Task 10 (multi-tenant).
 
-### 3. No unified error type
+### 3. Untested handlers — 3 remaining
 
-- **Where:** `src/api/ingest.rs`, `src/api/summary.rs`, `src/api/search.rs`, `src/api/browse.rs`
-- **Pattern:** Raw `(StatusCode, String)` tuples with repeated `.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?`
-- **Risk:** Inconsistent error responses for frontend; boilerplate accumulation
-- **Fix effort:** 30 min — create `AppError` enum implementing `IntoResponse`
+- `handle_semantic_search` — needs embedding sidecar + Milvus mock
+- `handle_shutdown` — destructive (kills server process)
+- `handle_mlx_status` — needs MLX sidecar running
 
-### ~~4. `expect()` in production paths~~ ✅ RESOLVED (efc3302)
+**Action:** Mock-based tests after Tasks 8-9.
 
-- **Fix applied:** `InferenceClient::new()` now returns `Result<Self, reqwest::Error>` instead of panicking. All 10 call sites updated. `main.rs` startup expects kept (appropriate for startup panics)
+### 4. `Uuid::nil()` default workspace ID
 
-### 5. Error handling inconsistency
+Single instance in `shared/config.rs:6`. Intentional pre-auth placeholder.
 
-- **What:** Some handlers return `Result<Json<T>, (StatusCode, String)>` (ingest, summary, search, browse); others return `Json<T>` directly with no error path (status, health, facets, ui, shutdown)
-- **Where:** `src/api/status.rs` silently returns zeros on Redis error (logged, but caller doesn't know)
-- **Risk:** Frontend can't distinguish "no jobs" from "Redis is down"
-- **Fix effort:** Defer to Task R1 (unified AppError)
+**Action:** Replace during Task 10 (workspaces + API keys).
 
-### 6. Missing integration test coverage
+## 🟢 LOW — Minor Items
 
-- **What:** Only 4 integration tests. Not tested via HTTP: `GET /search`, `GET /facets`, `GET /browse`, `GET /health`, `POST /shutdown`, `GET /summary/:file` (tested indirectly via DB, not via HTTP handler)
-- **Risk:** Regressions in handler wiring won't be caught
-- **Fix effort:** Fill incrementally with each task
+### 5. Large files (>300 LOC)
 
-### ~~7. Missing logging in handlers~~ ⚠️ PARTIALLY RESOLVED (efc3302)
+| File | LOC | Status |
+|------|-----|--------|
+| `features/semantic/milvus.rs` | 416 | REST client, reasonable for scope |
+| `shared/inference/client.rs` | 345 | LLM client with tests, reasonable |
+| `features/queue/stream.rs` | 301 | Redis Streams, at threshold |
 
-- **Fix applied:** Added `tracing::error!` to `handle_facets` in `src/api/tags.rs` (was silently swallowing Redis errors via `unwrap_or_default()`)
-- **Remaining:** `handle_search`, `handle_browse`, `handle_summary`, `handle_health` still lack `tracing` calls — defer to Task R1 (unified AppError will add structured logging to all handlers)
+### 6. Missing tooling
 
-## ⚪ Minor
+`cargo-outdated` and `cargo-udeps` not installed — can't audit dependency freshness or unused deps.
 
-### 8. `clone()` proliferation in main.rs
+## ✅ Clean Areas (Verified Healthy)
 
-- **Where:** `src/main.rs` — 8 clones during startup wiring
-- **Risk:** None (startup only, not a hot path)
-- **Fix effort:** Could be cleaner but not worth refactoring now
+- Zero unwrap/expect in production code
+- Zero TODO/FIXME/HACK markers
+- Zero unsafe blocks
+- Zero console.log in frontend code
+- Zero `any` types in TypeScript
+- All SQL columns properly indexed (workspace_id, source_path, source_hash, document_id)
+- Consistent error handling via `AppError` enum with JSON responses
+- Feature-based architecture — clean separation, no circular dependencies
+- No duplicate code — single source of truth for every module
+- Clippy clean with `-D warnings`
 
-### 9. Large file: `src/api/ui.rs` — 972 lines
+## Priority Actions
 
-- **What:** Inline HTML/CSS/JS monolith
-- **Risk:** Unmaintainable for adding new UI features
-- **Fix effort:** Deleted entirely by Task 11 (SvelteKit migration)
+| Priority | Action | Effort | When |
+|----------|--------|--------|------|
+| P3 | Move test-only DB functions behind a cargo feature flag | Small | Next refactor |
+| P3 | Add pagination to `get_source_hashes` and `get_all_summaries_brief` | Small | Task 10 |
+| Defer | Mock-based tests for semantic_search and mlx_status | Medium | After Tasks 8-9 |
+| Defer | Install `cargo-outdated` + `cargo-udeps` | Tiny | CI setup |
 
-## ✅ Clean Areas
+## Historical Trend
 
-- **No TODOs/FIXMEs/HACKs** — codebase is intentional
-- **No unsafe code** — all safe Rust
-- **Clippy clean** — `-D warnings` enforced
-- **All tests pass** — 23 unit + 4 integration
-- **Good test structure** — unit tests co-located in modules, integration tests in separate file
-- **Consistent Axum patterns** — extractors, handler signatures follow conventions
-- **No circular dependencies** — clean module graph
-- **Config via clap** — all service URLs configurable with sensible defaults
+| Scan | 🔴 Critical | 🟠 High | 🟡 Medium | 🟢 Low |
+|------|------------|---------|-----------|--------|
+| Pre-fix (initial) | 1 (duplicate modules) | 2 (clippy, low test coverage) | 3 | 2 |
+| **Post-fix (this baseline)** | **0** | **0** | **4** | **2** |
 
-## Recommended Priority Actions
-
-| Priority | Action | Effort | Status |
-|----------|--------|--------|--------|
-| ~~**P1**~~ | ~~Extract `DEFAULT_WORKSPACE_ID` constant~~ | ~~5 min~~ | ✅ Done (efc3302) |
-| ~~**P2**~~ | ~~Audit and clean up `#[allow(dead_code)]`~~ | ~~10 min~~ | ✅ Done (efc3302) |
-| ~~**P3**~~ | ~~Add `tracing::error!` to handlers~~ | ~~15 min~~ | ⚠️ Partial (efc3302) |
-| ~~**P3**~~ | ~~Fix `expect()` in `InferenceClient::new()`~~ | ~~5 min~~ | ✅ Done (efc3302) |
-| **Defer** | Unified `AppError` type + remaining handler logging | 30 min | Task R1 refactor |
-| **Defer** | Integration test coverage gaps | Incremental | Each task |
-| **Defer** | `ui.rs` (972 LOC) | Deleted | Task 11 |
+**Overall health: GOOD — no blockers, no high-priority issues. Ready for next phase.**
