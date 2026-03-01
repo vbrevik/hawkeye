@@ -1,3 +1,4 @@
+use crate::summary::Relationship;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -24,6 +25,7 @@ pub struct SummaryRow {
     pub tags: serde_json::Value,
     pub entities: serde_json::Value,
     pub topics: serde_json::Value,
+    pub relationships: serde_json::Value,
     pub word_count: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -103,6 +105,7 @@ pub struct InsertSummary<'a> {
     pub tags: &'a [String],
     pub entities: &'a [String],
     pub topics: &'a [String],
+    pub relationships: &'a [Relationship],
     pub word_count: i64,
 }
 
@@ -113,19 +116,21 @@ pub async fn insert_summary(
     let tags_json = serde_json::to_value(input.tags).unwrap_or_default();
     let entities_json = serde_json::to_value(input.entities).unwrap_or_default();
     let topics_json = serde_json::to_value(input.topics).unwrap_or_default();
+    let relationships_json = serde_json::to_value(input.relationships).unwrap_or_default();
 
     sqlx::query_as::<_, SummaryRow>(
         r#"
-        INSERT INTO summaries (document_id, tldr, title, tags, entities, topics, word_count)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO summaries (document_id, tldr, title, tags, entities, topics, relationships, word_count)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (document_id)
         DO UPDATE SET tldr = EXCLUDED.tldr,
                       title = EXCLUDED.title,
                       tags = EXCLUDED.tags,
                       entities = EXCLUDED.entities,
                       topics = EXCLUDED.topics,
+                      relationships = EXCLUDED.relationships,
                       word_count = EXCLUDED.word_count
-        RETURNING id, document_id, tldr, title, tags, entities, topics, word_count, created_at
+        RETURNING id, document_id, tldr, title, tags, entities, topics, relationships, word_count, created_at
         "#,
     )
     .bind(input.document_id)
@@ -134,6 +139,7 @@ pub async fn insert_summary(
     .bind(tags_json)
     .bind(entities_json)
     .bind(topics_json)
+    .bind(relationships_json)
     .bind(input.word_count)
     .fetch_one(pool)
     .await
@@ -146,7 +152,7 @@ pub async fn get_summary_by_document(
 ) -> Result<Option<SummaryRow>, sqlx::Error> {
     sqlx::query_as::<_, SummaryRow>(
         r#"
-        SELECT id, document_id, tldr, title, tags, entities, topics, word_count, created_at
+        SELECT id, document_id, tldr, title, tags, entities, topics, relationships, word_count, created_at
         FROM summaries
         WHERE document_id = $1
         "#,
@@ -165,6 +171,7 @@ pub struct FullSummaryRow {
     pub tags: serde_json::Value,
     pub entities: serde_json::Value,
     pub topics: serde_json::Value,
+    pub relationships: serde_json::Value,
     pub word_count: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -177,7 +184,7 @@ pub async fn get_summary_by_source_path(
     sqlx::query_as::<_, FullSummaryRow>(
         r#"
         SELECT d.source_path, d.source_hash,
-               s.tldr, s.title, s.tags, s.entities, s.topics, s.word_count, s.created_at
+               s.tldr, s.title, s.tags, s.entities, s.topics, s.relationships, s.word_count, s.created_at
         FROM documents d
         JOIN summaries s ON s.document_id = d.id
         WHERE d.workspace_id = $1 AND d.source_path = $2

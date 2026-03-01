@@ -1,4 +1,4 @@
-use crate::summary::Summary;
+use crate::summary::{Relationship, Summary};
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ You are a document summarizer. Given a markdown document, extract:
 3. Relevant tags (lowercase, max 5)
 4. Named entities mentioned (people, tools, services, max 10)
 5. High-level topics (max 3)
+6. Relationships between entities (max 10). Each relationship has a "from" entity, a "rel" type, a "to" entity, and a brief "context" string. Use rel types: owns, depends_on, manages, uses, created_by, part_of, related_to, located_in, member_of, produces.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -18,7 +19,8 @@ Respond ONLY with valid JSON in this exact format:
   "title": "...",
   "tags": ["..."],
   "entities": ["..."],
-  "topics": ["..."]
+  "topics": ["..."],
+  "relationships": [{"from": "...", "rel": "...", "to": "...", "context": "..."}]
 }
 No markdown fences. No explanation. Just the JSON object."#;
 
@@ -57,6 +59,8 @@ struct LlmOutput {
     tags: Vec<String>,
     entities: Vec<String>,
     topics: Vec<String>,
+    #[serde(default)]
+    relationships: Vec<Relationship>,
 }
 
 pub struct InferenceClient {
@@ -131,6 +135,7 @@ impl InferenceClient {
             tags: output.tags,
             entities: output.entities,
             topics: output.topics,
+            relationships: output.relationships,
             word_count,
         })
     }
@@ -146,7 +151,7 @@ mod tests {
         Json(json!({
             "choices": [{
                 "message": {
-                    "content": "{\"tldr\": \"A meeting about auth migration.\", \"title\": \"Auth Meeting\", \"tags\": [\"auth\", \"oauth2\"], \"entities\": [\"OAuth2\"], \"topics\": [\"authentication\"]}"
+                    "content": "{\"tldr\": \"A meeting about auth migration.\", \"title\": \"Auth Meeting\", \"tags\": [\"auth\", \"oauth2\"], \"entities\": [\"OAuth2\"], \"topics\": [\"authentication\"], \"relationships\": [{\"from\": \"OAuth2\", \"rel\": \"related_to\", \"to\": \"authentication\", \"context\": \"auth migration\"}]}"
                 }
             }]
         }))
@@ -172,5 +177,35 @@ mod tests {
         assert_eq!(summary.source, "notes.md");
         assert_eq!(summary.source_hash, "sha256:abc");
         assert!(summary.word_count > 0);
+        assert_eq!(summary.relationships.len(), 1);
+        assert_eq!(summary.relationships[0].from, "OAuth2");
+    }
+
+    #[tokio::test]
+    async fn test_summarize_missing_relationships_defaults_to_empty() {
+        let app = Router::new().route("/v1/chat/completions", post(mock_chat_no_rels));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model");
+        let result = client
+            .summarize("notes.md", "Some content", "sha256:abc")
+            .await;
+
+        let summary = result.unwrap();
+        assert!(summary.relationships.is_empty());
+    }
+
+    async fn mock_chat_no_rels() -> Json<serde_json::Value> {
+        Json(json!({
+            "choices": [{
+                "message": {
+                    "content": "{\"tldr\": \"Summary.\", \"title\": \"Title\", \"tags\": [], \"entities\": [], \"topics\": []}"
+                }
+            }]
+        }))
     }
 }

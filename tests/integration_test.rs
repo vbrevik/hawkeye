@@ -21,7 +21,7 @@ async fn mock_llm_handler() -> Json<serde_json::Value> {
     Json(json!({
         "choices": [{
             "message": {
-                "content": "{\"tldr\": \"A test document about testing.\", \"title\": \"Test Doc\", \"tags\": [\"test\", \"docs\"], \"entities\": [\"TestEntity\"], \"topics\": [\"testing\"]}"
+                "content": "{\"tldr\": \"A test document about testing.\", \"title\": \"Test Doc\", \"tags\": [\"test\", \"docs\"], \"entities\": [\"TestEntity\"], \"topics\": [\"testing\"], \"relationships\": [{\"from\": \"TestEntity\", \"rel\": \"related_to\", \"to\": \"testing\", \"context\": \"test relationship\"}]}"
             }
         }]
     }))
@@ -115,6 +115,10 @@ async fn test_full_pipeline() {
         let summary = summary.unwrap();
         assert_eq!(summary.title, "Test Doc");
         assert!(summary.word_count > 0);
+
+        let rels: Vec<serde_json::Value> =
+            serde_json::from_value(summary.relationships.clone()).unwrap_or_default();
+        assert_eq!(rels.len(), 1, "Expected 1 relationship for doc{}.md", i);
     }
 
     // 7. Verify search works
@@ -230,6 +234,7 @@ async fn test_db_migrations_and_document_crud() {
             tags: &["test".to_string(), "docs".to_string()],
             entities: &["TestEntity".to_string()],
             topics: &["testing".to_string()],
+            relationships: &[],
             word_count: 42,
         },
     )

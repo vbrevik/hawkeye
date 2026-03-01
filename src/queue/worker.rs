@@ -51,6 +51,7 @@ pub async fn process_file(
                         tags: &summary.tags,
                         entities: &summary.entities,
                         topics: &summary.topics,
+                        relationships: &summary.relationships,
                         word_count: summary.word_count as i64,
                     },
                 )

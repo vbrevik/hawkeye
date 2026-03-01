@@ -1,3 +1,3 @@
 pub mod types;
 
-pub use types::Summary;
+pub use types::{Relationship, Summary};

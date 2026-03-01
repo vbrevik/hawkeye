@@ -198,6 +198,7 @@ mod tests {
             tags: tags.into_iter().map(String::from).collect(),
             entities: vec![],
             topics: vec![],
+            relationships: vec![],
             word_count: 100,
         }
     }

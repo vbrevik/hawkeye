@@ -1,6 +1,6 @@
 use crate::api::AppState;
 use crate::db::documents;
-use crate::summary::Summary;
+use crate::summary::{Relationship, Summary};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -24,6 +24,8 @@ pub async fn handle_summary(
             let tags: Vec<String> = serde_json::from_value(r.tags).unwrap_or_default();
             let entities: Vec<String> = serde_json::from_value(r.entities).unwrap_or_default();
             let topics: Vec<String> = serde_json::from_value(r.topics).unwrap_or_default();
+            let relationships: Vec<Relationship> =
+                serde_json::from_value(r.relationships).unwrap_or_default();
 
             Ok(Json(Summary {
                 source,
@@ -34,6 +36,7 @@ pub async fn handle_summary(
                 tags,
                 entities,
                 topics,
+                relationships,
                 word_count: r.word_count as u64,
             }))
         }
