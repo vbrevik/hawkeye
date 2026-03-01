@@ -195,6 +195,33 @@ Expand Hawkeye from a local `.summary.json` summarizer into a team knowledge pla
 
 ---
 
+### Phase 4: Frontend
+
+#### Task 11 — SvelteKit frontend migration
+**Priority:** Medium | **Effort:** Medium
+
+**GOAL:** Replace the inline HTML string in `src/api/ui.rs` with a SvelteKit app in `web/`. Build outputs static files to `static/` which Axum serves via `tower-http::services::ServeDir`. The UI is split into reusable Svelte components with file-based routing for multiple pages.
+
+**CONSTRAINTS:**
+- SvelteKit with static adapter (`@sveltejs/adapter-static`) — no SSR, no Node.js at runtime
+- `web/` directory for the SvelteKit project; `static/` for build output (gitignored)
+- Axum serves `static/` via `ServeDir`, falling back to `index.html` for SPA routing
+- Port existing UI (search, browse, ingest, status, facets, detail panel) into Svelte components
+- Add Cancel button (visible during active ingestion) and Shutdown button (with docker checkbox + confirmation)
+- File-based routing: `/` (search + browse), `/admin` (cancel, shutdown, status dashboard)
+- Dev workflow: `cd web && npm run dev` with Vite proxy to `localhost:7700` for API calls
+- Delete `src/api/ui.rs` after migration; `GET /` serves `static/index.html`
+- TypeScript for type-safe API calls to Rust endpoints
+
+**FAILURE CONDITIONS:**
+- Node.js required at runtime (must be build-time only)
+- Existing UI features missing after migration (search, browse, ingest, facets, detail panel, drawer)
+- API calls break due to CORS or proxy misconfiguration
+- No dev hot-reload workflow
+- `cargo build` alone doesn't produce a working UI (need documented build step)
+
+---
+
 ### Improvements & Polish
 
 These are smaller tasks without full prompt contracts:
@@ -202,7 +229,7 @@ These are smaller tasks without full prompt contracts:
 - Document `/health` endpoint in README API section
 - Add health dashboard panel to web UI
 - `POST /reindex` endpoint to rebuild Tantivy from Postgres
-- Graceful shutdown (drain queue, close connections)
+- ~~Graceful shutdown (drain queue, close connections)~~ ✅ Done
 - Structured JSON logging option
 - CI pipeline (cargo test + clippy + docker compose integration tests)
 
@@ -232,9 +259,13 @@ Task 8 (Neo4j knowledge graph)
   │
   ▼
 Task 10 (Workspaces + API keys)
+  │
+  ▼
+Task 11 (SvelteKit frontend)
 ```
 
 Tasks 4, 5, and 9 can be done in parallel with their predecessors.
+Task 11 can be done anytime but best after the API surface stabilises (after Task 9).
 
 ## Architecture Decisions
 
