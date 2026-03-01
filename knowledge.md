@@ -53,3 +53,5 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
 - Model variants: 4-bit (~13GB RAM) vs 8-bit (~22GB) — pass model arg to start script: `./scripts/start_mlx.sh InferenceIllusionist/gpt-oss-20b-MLX-4bit`
+- Running server holds Tantivy index lock — kill existing process before starting a new instance
+- Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
