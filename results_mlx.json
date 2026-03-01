@@ -1,0 +1,469 @@
+{
+  "label": "Qwen/Qwen2.5-7B-Instruct",
+  "total": 20,
+  "completed": 20,
+  "failed": 0,
+  "elapsed_s": 48.585262916996726,
+  "files_queued": 20,
+  "files_skipped": 0,
+  "sidecar_model": "Qwen/Qwen2.5-7B-Instruct",
+  "errors": [
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/BACKLOG.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-28-health-panel-design.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-28-split-pane-explorer-design.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-27-rename-and-folder-picker-design.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-27-hawkeye-infrastructure-expansion-design.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-27-ai-summarizer-design.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-27-hawkeye-rename-folder-picker.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-28-split-pane-explorer.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-28-health-panel.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-28-hawkeye-v2-infrastructure.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "/Users/vidarbrevik/projects/hawkeye/docs/archive/2026-02-27-ai-summarizer-implementation.md",
+      "error": "error sending request for url (http://localhost:7701/v1/chat/completions)",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/ethno-park-in-sovljak.md",
+      "error": "EOF while parsing a value at line 46 column 23",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/aliciidae.md",
+      "error": "EOF while parsing a value at line 13 column 138",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/iowas-44th-senate-district.md",
+      "error": "EOF while parsing a string at line 48 column 71",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/zarrineh-rud-rural-district-miandoab-county.md",
+      "error": "EOF while parsing a value at line 46 column 26",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/brackin-karauria-henry.md",
+      "error": "EOF while parsing a string at line 53 column 24",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/guerreran-climbing-salamander.md",
+      "error": "EOF while parsing a string at line 45 column 11",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/nicklin-way.md",
+      "error": "EOF while parsing a string at line 51 column 22",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/mingaladon-township.md",
+      "error": "EOF while parsing a value at line 46 column 23",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/black-cats-band.md",
+      "error": "EOF while parsing a string at line 57 column 57",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/bartolome-vicente-bacarro.md",
+      "error": "EOF while parsing a string at line 53 column 21",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/weingartia.md",
+      "error": "EOF while parsing a value at line 43 column 6",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/patrick-watson-musician.md",
+      "error": "EOF while parsing a string at line 51 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/matinee-1993-film.md",
+      "error": "EOF while parsing a string at line 47 column 25",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/woodland-cemetery-quincy-illinois.md",
+      "error": "EOF while parsing a value at line 51 column 34",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/german-international-school-toronto.md",
+      "error": "EOF while parsing a string at line 53 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/violinist-of-hameln.md",
+      "error": "EOF while parsing a string at line 46 column 10",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meteor-and-the-mighty-monster-trucks.md",
+      "error": "EOF while parsing a value at line 57 column 24",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/billy-scott-footballer-born-1882.md",
+      "error": "EOF while parsing a string at line 48 column 104",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/list-of-the-real-housewives-of-miami-episodes.md",
+      "error": "EOF while parsing an object at line 58 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/stronger-than-jesus.md",
+      "error": "expected `,` or `}` at line 2 column 33",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/gundello-godari.md",
+      "error": "EOF while parsing a string at line 45 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/william-h-berg-house.md",
+      "error": "EOF while parsing an object at line 50 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/island-class-patrol-vessel-2013.md",
+      "error": "EOF while parsing a string at line 56 column 17",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/horse-culture.md",
+      "error": "EOF while parsing a string at line 48 column 14",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/alexander-of-pherae.md",
+      "error": "EOF while parsing a string at line 46 column 10",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/lickdale-pennsylvania.md",
+      "error": "EOF while parsing a string at line 45 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/john-dupont-house.md",
+      "error": "EOF while parsing a value at line 51 column 44",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/captain-jack-captain-jack-song.md",
+      "error": "expected `,` or `}` at line 2 column 26",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/frocktober.md",
+      "error": "EOF while parsing a string at line 52 column 24",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-nexus-api-2025-01-20.md",
+      "error": "EOF while parsing a string at line 54 column 37",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/neiman-marcus-fashion-award.md",
+      "error": "EOF while parsing a string at line 61 column 35",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/piyasvasti-amranand.md",
+      "error": "EOF while parsing an object at line 55 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-auth-overhaul-2024-11-03.md",
+      "error": "EOF while parsing a string at line 53 column 13",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-glacier-storage-2025-02-20.md",
+      "error": "EOF while parsing a string at line 51 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-forge-cicd-2023-01-08.md",
+      "error": "EOF while parsing a string at line 48 column 18",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-project-phoenix-2023-07-08.md",
+      "error": "EOF while parsing a string at line 51 column 15",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2023-05-12.md",
+      "error": "EOF while parsing a value at line 51 column 31",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-search-rewrite-2023-04-25.md",
+      "error": "EOF while parsing a value at line 51 column 31",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-apex-security-2025-08-12.md",
+      "error": "EOF while parsing a string at line 51 column 11",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-auth-overhaul-2024-08-21.md",
+      "error": "EOF while parsing an object at line 61 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-forge-cicd-2023-06-10.md",
+      "error": "EOF while parsing a value at line 47 column 47",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-search-rewrite-2025-01-13.md",
+      "error": "EOF while parsing a string at line 61 column 21",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-pulse-monitoring-2026-01-28.md",
+      "error": "EOF while parsing a string at line 52 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-nexus-api-2025-09-03.md",
+      "error": "EOF while parsing a value at line 53 column 11",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-glacier-storage-2023-01-21.md",
+      "error": "EOF while parsing a string at line 53 column 9",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2023-06-21.md",
+      "error": "EOF while parsing a value at line 52 column 26",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-migration-to-k8s-2025-02-11.md",
+      "error": "EOF while parsing a string at line 52 column 10",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-pulse-monitoring-2025-02-01.md",
+      "error": "EOF while parsing a value at line 61 column 13",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-beacon-analytics-2024-08-09.md",
+      "error": "EOF while parsing a string at line 54 column 18",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2025-01-20.md",
+      "error": "EOF while parsing a value at line 49 column 6",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-project-phoenix-2025-10-09.md",
+      "error": "EOF while parsing a string at line 52 column 21",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-search-rewrite-2023-07-11.md",
+      "error": "EOF while parsing a string at line 53 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-atlas-platform-2023-04-02.md",
+      "error": "EOF while parsing a value at line 55 column 6",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-stratos-deploy-2023-05-20.md",
+      "error": "EOF while parsing a string at line 48 column 23",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-project-phoenix-2026-02-27.md",
+      "error": "EOF while parsing a value at line 53 column 11",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-beacon-analytics-2023-02-01.md",
+      "error": "EOF while parsing a string at line 53 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-glacier-storage-2023-09-25.md",
+      "error": "EOF while parsing a value at line 53 column 31",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-glacier-storage-2025-07-09.md",
+      "error": "EOF while parsing a string at line 53 column 9",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-meridian-data-2025-05-17.md",
+      "error": "EOF while parsing a string at line 52 column 21",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-apex-security-2026-01-14-1.md",
+      "error": "EOF while parsing a string at line 48 column 86",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2023-05-19.md",
+      "error": "EOF while parsing an object at line 48 column 86",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-glacier-storage-2024-06-13.md",
+      "error": "EOF while parsing a string at line 51 column 7",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2024-05-19.md",
+      "error": "EOF while parsing an object at line 48 column 85",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-pulse-monitoring-2025-09-27.md",
+      "error": "EOF while parsing a string at line 48 column 41",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2023-04-25.md",
+      "error": "EOF while parsing a string at line 48 column 88",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-core-refactor-q1-2025-11-06.md",
+      "error": "EOF while parsing an object at line 64 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-project-phoenix-2024-07-01.md",
+      "error": "EOF while parsing an object at line 62 column 73",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-migration-to-k8s-2025-09-18.md",
+      "error": "EOF while parsing an object at line 50 column 5",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-migration-to-k8s-2023-03-05.md",
+      "error": "EOF while parsing a string at line 48 column 21",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-pulse-monitoring-2024-06-08.md",
+      "error": "EOF while parsing a string at line 52 column 14",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-search-rewrite-2025-01-21.md",
+      "error": "EOF while parsing a string at line 47 column 17",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-project-phoenix-2024-03-20.md",
+      "error": "EOF while parsing a value at line 71 column 23",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-migration-to-k8s-2025-08-10.md",
+      "error": "EOF while parsing a value at line 49 column 6",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-lighthouse-cms-2024-02-03.md",
+      "error": "EOF while parsing a string at line 64 column 18",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-core-refactor-q1-2025-02-25.md",
+      "error": "EOF while parsing a string at line 48 column 29",
+      "attempts": 3
+    },
+    {
+      "file": "test_data/meeting-notes-apex-security-2023-08-09.md",
+      "error": "EOF while parsing a string at line 63 column 10",
+      "attempts": 3
+    }
+  ],
+  "selected_files": [
+    "1928-north-carolina-gubernatorial-election.md",
+    "1984-ottawa-rough-riders-season.md",
+    "2007-fife-council-election.md",
+    "2012-plaid-cymru-leadership-election.md",
+    "2019-eurohockey-club-champions-cup.md",
+    "2019-fc-honka-season.md",
+    "abd-el-aziz-el-zoubi.md",
+    "alex-nicholls.md",
+    "alexander-of-pherae.md",
+    "aliciidae.md",
+    "aliquot-sum.md",
+    "andr\u00e9-da-silva-gomes.md",
+    "anela-name.md",
+    "anthony-hallam.md",
+    "ash1l.md",
+    "bartolome-vicente-bacarro.md",
+    "berliner-astronomisches-jahrbuch.md",
+    "bias-disambiguation.md",
+    "billy-scott-footballer-born-1882.md",
+    "bingham-south-carolina.md"
+  ]
+}

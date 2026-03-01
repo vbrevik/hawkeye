@@ -9,6 +9,9 @@ Usage:
     # Benchmark with default settings (all test_data/, server on 7700):
     uv run scripts/benchmark_ingest.py
 
+    # Benchmark only 20 files (sorted, same set every run):
+    uv run scripts/benchmark_ingest.py --limit 20 --clean --output results_mlx.json
+
     # Clean DB first (for fair A/B comparison between sidecars):
     uv run scripts/benchmark_ingest.py --clean
 
@@ -24,9 +27,13 @@ Usage:
 # ///
 
 import argparse
+import atexit
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -254,6 +261,29 @@ def count_md_files(path: str) -> int:
     return len(list(Path(path).glob("*.md")))
 
 
+def select_files(source: str, limit: int, console: Console) -> str:
+    """Select exactly `limit` .md files (sorted) and symlink them into a temp dir.
+
+    Returns the absolute path to the temp directory. Caller must clean up.
+    """
+    all_files = sorted(Path(source).glob("*.md"), key=lambda p: p.name)
+    if limit > len(all_files):
+        console.print(f"[red]✗ --limit {limit} but only {len(all_files)} .md files in {source}[/red]")
+        sys.exit(1)
+
+    selected = all_files[:limit]
+    tmp_dir = tempfile.mkdtemp(prefix="hawkeye_bench_")
+
+    for f in selected:
+        os.symlink(f.resolve(), Path(tmp_dir) / f.name)
+
+    console.print(f"[green]✓[/green] Selected {limit}/{len(all_files)} files (sorted alphabetically) → [dim]{tmp_dir}[/dim]")
+    for i, f in enumerate(selected):
+        console.print(f"  [dim]{i+1:3d}.[/dim] {f.name}")
+
+    return tmp_dir
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hawkeye ingest pipeline benchmark")
     parser.add_argument("--url", default=HAWKEYE_URL,
@@ -264,6 +294,8 @@ def main() -> None:
                         help="Truncate documents + summaries tables before ingesting (requires psql)")
     parser.add_argument("--output", help="Write JSON results to file")
     parser.add_argument("--label", help="Label for this run (used in output/comparison)")
+    parser.add_argument("--limit", type=int,
+                        help="Ingest only the first N files (sorted alphabetically) for reproducible A/B tests")
     parser.add_argument("--compare", nargs=2, metavar=("FILE_A", "FILE_B"),
                         help="Compare two saved JSON result files instead of running a benchmark")
     args = parser.parse_args()
@@ -304,6 +336,18 @@ def main() -> None:
     md_count = count_md_files(args.path)
     console.print(f"[green]✓[/green] {md_count} markdown files in [dim]{args.path}[/dim]")
 
+    # If --limit, create temp dir with symlinks to exactly N sorted files
+    ingest_dir = args.path
+    tmp_dir = None
+    selected_files: list[str] = []
+    if args.limit:
+        if not args.clean:
+            console.print("[yellow]⚠ Using --limit without --clean — consider --clean for fair A/B comparison[/yellow]")
+        tmp_dir = select_files(args.path, args.limit, console)
+        selected_files = sorted(os.listdir(tmp_dir))
+        ingest_dir = tmp_dir
+        atexit.register(shutil.rmtree, tmp_dir, True)
+
     # Clean DB if requested
     if args.clean:
         if not clean_db(console):
@@ -316,9 +360,10 @@ def main() -> None:
     baseline_status = get_status(args.url)
 
     # Start ingest
-    console.print(f"\n[bold cyan]Starting ingest of {args.path}...[/bold cyan]")
+    file_count_label = f"{args.limit} of" if args.limit else "all"
+    console.print(f"\n[bold cyan]Starting ingest of {file_count_label} {args.path}...[/bold cyan]")
 
-    ingest_resp = start_ingest(args.url, args.path, console)
+    ingest_resp = start_ingest(args.url, ingest_dir, console)
     if ingest_resp is None:
         sys.exit(1)
 
@@ -348,6 +393,8 @@ def main() -> None:
         "sidecar_model": sidecar.get("model"),
         "errors": final_status.get("errors", []),
     }
+    if selected_files:
+        results["selected_files"] = selected_files
 
     print_results(results, label, console)
 

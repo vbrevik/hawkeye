@@ -1,10 +1,2 @@
-pub mod api;
-pub mod config;
-pub mod db;
-pub mod embedding;
-pub mod inference;
-pub mod milvus;
-pub mod queue;
-pub mod scanner;
-pub mod search;
-pub mod summary;
+pub mod features;
+pub mod shared;

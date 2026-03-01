@@ -1,23 +1,34 @@
-use axum::{routing::post, Json, Router};
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::{routing::{get, post}, Json, Router};
+use clap::Parser;
 use hawkeye::{
-    config::DEFAULT_WORKSPACE_ID,
-    db::documents,
-    embedding::client::EmbedClient,
-    inference::client::InferenceClient,
-    milvus::client::MilvusClient,
-    queue::{
+    features::browse::handler::handle_browse,
+    features::ingest::scanner::scan_directory,
+    features::queue::{
         consumer::spawn_consumers,
-        stream::RedisQueue,
+        RedisQueue,
     },
-    scanner::files::scan_directory,
-    search::indexer::SearchIndexer,
+    features::search::handler::handle_search,
+    features::search::SearchIndexer,
+    features::semantic::EmbedClient,
+    features::semantic::MilvusClient,
+    features::summary::{handler::handle_summary, Relationship, Summary},
+    shared::config::{AppConfig, DEFAULT_WORKSPACE_ID},
+    shared::db::documents,
+    shared::health::handle_health,
+    shared::inference::client::InferenceClient,
+    shared::state::AppState,
 };
+use http_body_util::BodyExt;
 use serde_json::json;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Mutex};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 const TEST_POSTGRES_URL: &str = "postgresql://hawkeye:hawkeye@localhost:5433/hawkeye";
@@ -335,6 +346,273 @@ async fn test_cancel_ingestion() {
         h.abort();
     }
     queue.cleanup().await.unwrap();
+}
+
+/// Build a test AppState with real Postgres/Redis and the given Tantivy indexer.
+async fn create_test_app_state(
+    indexer: Arc<Mutex<SearchIndexer>>,
+) -> (Arc<AppState>, PgPool) {
+    let pg_pool = PgPool::connect(TEST_POSTGRES_URL).await.unwrap();
+    sqlx::migrate!().run(&pg_pool).await.unwrap();
+    let redis_pool = create_redis_pool();
+    let config = AppConfig::parse_from(["hawkeye"]);
+    let embed = Arc::new(EmbedClient::new("http://127.0.0.1:1", "mock-model").unwrap());
+    let milvus = Arc::new(MilvusClient::new("http://127.0.0.1:1").unwrap());
+    let (shutdown_tx, _) = watch::channel(false);
+
+    let pg_clone = pg_pool.clone();
+    let state = Arc::new(AppState {
+        config,
+        redis_pool,
+        indexer,
+        pg_pool,
+        embed,
+        milvus,
+        shutdown: shutdown_tx,
+        shutdown_docker: AtomicBool::new(false),
+    });
+    (state, pg_clone)
+}
+
+/// Helper: send a GET request to the app and return (status, body bytes).
+async fn get_request(app: Router, uri: &str) -> (StatusCode, bytes::Bytes) {
+    let req = Request::builder()
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    (status, body)
+}
+
+#[tokio::test]
+async fn test_search_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+
+    // Index test documents
+    {
+        let mut idx = indexer.lock().await;
+        idx.index_summary(&Summary {
+            source: "auth.md".to_string(),
+            source_hash: "sha256:aaa".to_string(),
+            created_at: chrono::Utc::now(),
+            tldr: "Guide to setting up OAuth2 authentication".to_string(),
+            title: "OAuth2 Setup Guide".to_string(),
+            tags: vec!["auth".to_string(), "oauth2".to_string()],
+            entities: vec!["OAuth2".to_string()],
+            topics: vec!["authentication".to_string()],
+            relationships: vec![],
+            word_count: 100,
+        }).unwrap();
+        idx.index_summary(&Summary {
+            source: "deploy.md".to_string(),
+            source_hash: "sha256:bbb".to_string(),
+            created_at: chrono::Utc::now(),
+            tldr: "Steps for deploying to Kubernetes cluster".to_string(),
+            title: "K8s Deployment".to_string(),
+            tags: vec!["kubernetes".to_string(), "devops".to_string()],
+            entities: vec!["Kubernetes".to_string()],
+            topics: vec!["deployment".to_string()],
+            relationships: vec![],
+            word_count: 200,
+        }).unwrap();
+    }
+
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let app = Router::new()
+        .route("/search", get(handle_search))
+        .with_state(state);
+
+    // Search for "OAuth2" — should find auth.md
+    let (status, body) = get_request(app.clone(), "/search?q=OAuth2").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(!results.is_empty(), "Expected search results for 'OAuth2'");
+    assert_eq!(results[0]["file"], "auth.md");
+
+    // Search for "kubernetes" — should find deploy.md
+    let (status, body) = get_request(app.clone(), "/search?q=kubernetes").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(!results.is_empty(), "Expected search results for 'kubernetes'");
+    assert_eq!(results[0]["file"], "deploy.md");
+
+    // Search with limit
+    let (status, body) = get_request(app.clone(), "/search?q=OAuth2&limit=1").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(results.len() <= 1, "Expected at most 1 result with limit=1");
+
+    // Search with no results
+    let (status, body) = get_request(app.clone(), "/search?q=nonexistent_xyzzy").await;
+    assert_eq!(status, StatusCode::OK);
+    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(results.is_empty(), "Expected no results for nonsense query");
+}
+
+#[tokio::test]
+async fn test_browse_handler() {
+    // Create a temp directory with subdirs and .md files
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("readme.md"), "# Hello").unwrap();
+    std::fs::write(dir.path().join("notes.md"), "# Notes").unwrap();
+    std::fs::write(dir.path().join("data.txt"), "not markdown").unwrap();
+    std::fs::create_dir(dir.path().join("subdir_a")).unwrap();
+    std::fs::create_dir(dir.path().join("subdir_b")).unwrap();
+    std::fs::create_dir(dir.path().join(".hidden")).unwrap();
+
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let app = Router::new()
+        .route("/browse", get(handle_browse))
+        .with_state(state);
+
+    // Browse the temp directory
+    let path_str = dir.path().to_string_lossy();
+    let (status, body) = get_request(app.clone(), &format!("/browse?path={}", path_str)).await;
+    assert_eq!(status, StatusCode::OK);
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Should list only non-hidden subdirectories
+    let entries = result["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "Expected 2 visible subdirectories");
+    assert!(entries.contains(&json!("subdir_a")));
+    assert!(entries.contains(&json!("subdir_b")));
+
+    // Should count only .md files
+    assert_eq!(result["md_file_count"], 2);
+
+    // Should have a parent
+    assert!(result["parent"].is_string());
+
+    // Browse non-existent path should return 400
+    let (status, _) = get_request(app.clone(), "/browse?path=/nonexistent_xyzzy_path").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Browse a file (not a directory) should return 400
+    let file_path = dir.path().join("readme.md");
+    let (status, _) = get_request(
+        app.clone(),
+        &format!("/browse?path={}", file_path.to_string_lossy()),
+    ).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_summary_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, pg_pool) = create_test_app_state(indexer).await;
+
+    // Insert a document and summary into Postgres
+    let source_path = format!("test-summary-{}.md", Uuid::new_v4());
+    let doc = documents::upsert_document(
+        &pg_pool,
+        DEFAULT_WORKSPACE_ID,
+        &source_path,
+        "sha256:summary_test_hash",
+        Some(512),
+    )
+    .await
+    .unwrap();
+
+    documents::insert_summary(
+        &pg_pool,
+        &documents::InsertSummary {
+            document_id: doc.id,
+            tldr: "A comprehensive guide to Rust ownership.",
+            title: "Rust Ownership Guide",
+            tags: &["rust".to_string(), "ownership".to_string()],
+            entities: &["Rust".to_string()],
+            topics: &["programming".to_string()],
+            relationships: &[Relationship {
+                from: "Rust".to_string(),
+                rel: hawkeye::features::summary::types::RelationType::Uses,
+                to: "Ownership".to_string(),
+                context: "core concept".to_string(),
+            }],
+            word_count: 350,
+        },
+    )
+    .await
+    .unwrap();
+
+    let app = Router::new()
+        .route("/summary/{file}", get(handle_summary))
+        .with_state(state);
+
+    // Fetch the summary via the handler
+    let (status, body) = get_request(app.clone(), &format!("/summary/{}", source_path)).await;
+    assert_eq!(status, StatusCode::OK);
+    let summary: Summary = serde_json::from_slice(&body).unwrap();
+    assert_eq!(summary.title, "Rust Ownership Guide");
+    assert_eq!(summary.tldr, "A comprehensive guide to Rust ownership.");
+    assert_eq!(summary.tags, vec!["rust", "ownership"]);
+    assert_eq!(summary.entities, vec!["Rust"]);
+    assert_eq!(summary.topics, vec!["programming"]);
+    assert_eq!(summary.word_count, 350);
+    assert_eq!(summary.relationships.len(), 1);
+    assert_eq!(summary.relationships[0].from, "Rust");
+    assert_eq!(summary.relationships[0].to, "Ownership");
+
+    // Request a non-existent summary should return 404
+    let (status, _) = get_request(app.clone(), "/summary/nonexistent-file.md").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Clean up test data
+    sqlx::query("DELETE FROM summaries WHERE document_id = $1")
+        .bind(doc.id)
+        .execute(&pg_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM documents WHERE id = $1")
+        .bind(doc.id)
+        .execute(&pg_pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_health_handler() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, _pg) = create_test_app_state(indexer).await;
+    let app = Router::new()
+        .route("/health", get(handle_health))
+        .with_state(state);
+
+    let (status, body) = get_request(app, "/health").await;
+    assert_eq!(status, StatusCode::OK);
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Should have services array with 7 entries
+    let services = result["services"].as_array().unwrap();
+    assert_eq!(services.len(), 7, "Expected 7 service health checks");
+
+    // Should have checked_at timestamp
+    assert!(result["checked_at"].is_string());
+
+    // Each service should have name, status, and latency_ms fields
+    for svc in services {
+        assert!(svc["name"].is_string(), "Service missing 'name' field");
+        assert!(svc["status"].is_string(), "Service missing 'status' field");
+    }
+
+    // Redis should be up (required for integration tests)
+    let redis = services.iter().find(|s| s["name"] == "redis").unwrap();
+    assert_eq!(redis["status"], "up", "Redis should be up for integration tests");
+    assert!(redis["latency_ms"].is_number());
 }
 
 #[tokio::test]

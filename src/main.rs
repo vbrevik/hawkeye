@@ -1,24 +1,16 @@
-mod api;
-mod config;
-mod db;
-mod embedding;
-mod inference;
-mod milvus;
-mod queue;
-mod scanner;
-mod search;
-mod summary;
+mod features;
+mod shared;
 
-use api::AppState;
+use shared::state::AppState;
 use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
-use config::{AppConfig, DEFAULT_WORKSPACE_ID};
-use embedding::client::EmbedClient;
-use inference::client::InferenceClient;
-use milvus::client::MilvusClient;
-use queue::stream::RedisQueue;
-use search::indexer::SearchIndexer;
+use shared::config::{AppConfig, DEFAULT_WORKSPACE_ID};
+use features::semantic::EmbedClient;
+use shared::inference::client::InferenceClient;
+use features::semantic::MilvusClient;
+use features::queue::RedisQueue;
+use features::search::SearchIndexer;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -109,7 +101,7 @@ async fn main() {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    let consumer_handles = queue::consumer::spawn_consumers(
+    let consumer_handles = features::queue::consumer::spawn_consumers(
         queue,
         inference.clone(),
         indexer.clone(),
@@ -134,18 +126,18 @@ async fn main() {
     });
 
     let app = Router::new()
-        .route("/", get(api::ui::handle_ui))
-        .route("/ingest", post(api::ingest::handle_ingest))
-        .route("/cancel", post(api::ingest::handle_cancel))
-        .route("/shutdown", post(api::shutdown::handle_shutdown))
-        .route("/status", get(api::status::handle_status))
-        .route("/mlx-status", get(api::status::handle_mlx_status))
-        .route("/search", get(api::search::handle_search))
-        .route("/search/semantic", get(api::semantic::handle_semantic_search))
-        .route("/facets", get(api::tags::handle_facets))
-        .route("/summary/{file}", get(api::summary::handle_summary))
-        .route("/browse", get(api::browse::handle_browse))
-        .route("/health", get(api::health::handle_health))
+        .route("/", get(shared::ui::handle_ui))
+        .route("/ingest", post(features::ingest::handler::handle_ingest))
+        .route("/cancel", post(features::ingest::handler::handle_cancel))
+        .route("/shutdown", post(shared::shutdown::handle_shutdown))
+        .route("/status", get(shared::status::handle_status))
+        .route("/mlx-status", get(shared::status::handle_mlx_status))
+        .route("/search", get(features::search::handler::handle_search))
+        .route("/search/semantic", get(features::semantic::handler::handle_semantic_search))
+        .route("/facets", get(features::search::facets::handle_facets))
+        .route("/summary/{file}", get(features::summary::handler::handle_summary))
+        .route("/browse", get(features::browse::handler::handle_browse))
+        .route("/health", get(shared::health::handle_health))
         .with_state(state.clone());
 
     let addr = format!("0.0.0.0:{}", config.port);

@@ -2,56 +2,95 @@
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, Tokio) + Python sidecar (mlx-lm, GPT-OSS 20B) — optimised for Apple Silicon.
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon.
 
 ## Quickstart
 
 - Build: `cargo build --release`
 - Run: `cargo run --release` (default port 7700)
 - Start MLX sidecar: `./scripts/start_mlx.sh` (port 7701)
+- Start vllm-mlx sidecar (alternative): `./scripts/start_vllm_mlx.sh` (port 7701)
 - Start embedding sidecar: `./scripts/start_embed.sh` (port 7703)
 - Infrastructure: `docker compose up -d` (Redis, Postgres, etcd, MinIO, Milvus, Neo4j)
 - Test: `cargo test`
 - Integration tests only: `cargo test --test integration_test`
 - Lint: `cargo clippy -- -D warnings`
+- Benchmark (inference): `uv run scripts/benchmark.py`
+- Benchmark (ingest pipeline): `uv run scripts/benchmark_ingest.py --limit 20 --clean`
 
 ## Architecture
 
-- `src/main.rs` — Axum server entrypoint, route definitions
-- `src/config.rs` — CLI args via `clap::Parser` (AppConfig)
-- `src/api/` — Route handlers: ui, ingest, cancel, shutdown, search, status, summary, tags, browse, health
-- `src/api/mod.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, shutdown watch channel, shutdown_docker flag)
-- `src/inference/` — MLX sidecar HTTP client
-- `src/queue/` — Redis Streams job queue (stream.rs: RedisQueue, consumer.rs: consumer loop, worker.rs: file processor)
-- `src/scanner/` — Filesystem `.md` file discovery
-- `src/search/` — Tantivy full-text index
-- `src/db/` — Postgres CRUD (documents, summaries) via sqlx `query_as` runtime checking
-- `src/embedding/` — bge-m3 embedding sidecar HTTP client (EmbedClient) + text chunking
-- `src/summary/` — `Summary`, `Relationship`, `RelationType` structs (types only; storage is in Postgres via `src/db/`)
-- `tests/integration_test.rs` — Integration tests
-- `test_data/` — Sample markdown files for testing
+Organized into **feature-based modules** (`src/features/`) and **shared infrastructure** (`src/shared/`).
+
+- `src/main.rs` — Axum server entrypoint, route definitions, graceful shutdown
+- `src/lib.rs` — `pub mod features; pub mod shared;` for integration tests
+
+### Feature modules (`src/features/`)
+
+- `features/ingest/handler.rs` — `POST /ingest` (scan + queue) and `POST /cancel` (discard queued jobs)
+- `features/ingest/scanner.rs` — Filesystem `.md` file discovery with SHA-256 hashing
+- `features/ingest/worker.rs` — Process single file (LLM → Postgres → Tantivy → embeddings → Milvus)
+- `features/queue/stream.rs` — RedisQueue (XADD, XREADGROUP, XACK, cancel, status)
+- `features/queue/consumer.rs` — spawn_consumers(), consumer loop with graceful shutdown
+- `features/search/handler.rs` — `GET /search` full-text search via Tantivy
+- `features/search/indexer.rs` — Tantivy full-text index read/write
+- `features/search/facets.rs` — `GET /facets` tag/topic/entity frequency counts
+- `features/semantic/handler.rs` — `GET /search/semantic` vector search via Milvus + bge-m3 embeddings
+- `features/semantic/embed_client.rs` — bge-m3 embedding sidecar HTTP client (EmbedClient) + text chunking
+- `features/semantic/milvus.rs` — Milvus vector DB REST API client (collection mgmt, upsert, search)
+- `features/summary/handler.rs` — `GET /summary/{file}` single file summary from Postgres
+- `features/summary/types.rs` — `Summary`, `Relationship`, `RelationType` structs
+- `features/browse/handler.rs` — `GET /browse` filesystem directory listing with md_file_count
+
+### Shared modules (`src/shared/`)
+
+- `shared/config.rs` — CLI args via `clap::Parser` (AppConfig), `DEFAULT_WORKSPACE_ID`
+- `shared/state.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, embed, milvus, shutdown)
+- `shared/db/documents.rs` — Postgres CRUD (documents, summaries, relationships) via sqlx
+- `shared/inference/client.rs` — MLX sidecar HTTP client (summarization LLM calls)
+- `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
+- `shared/shutdown.rs` — `POST /shutdown` graceful server shutdown (optional `?docker=true`)
+- `shared/status.rs` — `GET /status` queue progress, `GET /mlx-status` sidecar health
+- `shared/ui.rs` — Inline HTML/CSS/JS web UI (search, browse, ingest, facets, detail panel)
+
+### Scripts
+
+- `scripts/start_mlx.sh` — Start mlx-lm inference sidecar (port 7701)
+- `scripts/start_vllm_mlx.sh` — Start vllm-mlx inference sidecar (port 7701, continuous batching)
+- `scripts/start_embed.sh` — Start bge-m3 embedding sidecar (port 7703)
+- `scripts/embed_server.py` — Python embedding server
+- `scripts/benchmark.py` — Inference-level latency/throughput benchmark (direct sidecar calls)
+- `scripts/benchmark_ingest.py` — Full pipeline ingest benchmark (POST /ingest → poll → results)
+- `scripts/generate_test_data.py` — Generate test markdown files
+- `scripts/generate_synthetic_notes.py` — Generate synthetic meeting notes
+
+### Other files
+
+- `tests/integration_test.rs` — Integration tests (require Docker Postgres + Redis)
+- `test_data/` — 1000 sample markdown files for testing
+- `migrations/` — sqlx Postgres migrations (run automatically on startup)
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
-- `migrations/` — sqlx Postgres migrations (run automatically on startup)
-
-**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries with relationships) + Tantivy index → search API + web UI
+**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus → search API + web UI
 
 ## Conventions
 
 - Rust 2021 edition, Axum 0.8 with `Arc<AppState>` shared state
 - Config via clap derive macros, all flags have defaults
 - Handlers are `async fn` with Axum extractors (`State`, `Query`, `Json`, `Path`)
-- Each API module is one file per endpoint group
+- Feature-based module layout: `src/features/` for domain logic, `src/shared/` for cross-cutting concerns
 - SHA-256 content hashing to skip unchanged files on re-ingest (hashes checked against Postgres, not filesystem)
 - Redis Streams for durable job queue — consumer group `hawkeye-workers`, stream key `hawkeye:jobs:{workspace_id}`
 - Clippy with `-D warnings` (treat warnings as errors)
 - No global package installs; use `cargo` for Rust deps
 - Docker ports intentionally offset from defaults (Postgres 5433, Neo4j 7475/7688) to avoid conflicts
+- Python scripts use `uv run` with inline `# /// script` dependency declarations — no virtualenv needed
 
 ## Gotchas
 
 - Milvus health check is on port **9091**, not the main 19530 — the code does `.replace(":19530", ":9091")`
 - MLX sidecar runs on **7701** by default (not 8100 as older docs may say)
+- Embedding sidecar runs on **7703** by default, serves `BAAI/bge-m3` (1024-dim vectors) via OpenAI-compatible `/v1/embeddings` endpoint
 - Default server port is **7700** (not 3000)
 - SHA-256 hash is stored in Postgres `documents.source_hash` — skip logic fetches known hashes from Postgres before scanning, so if you manually edit a `.md` file, re-ingest will detect the changed hash and reprocess it
 - `Arc<AppState>` is cloned into each handler via `State(state): State<Arc<AppState>>` extractor — the `Arc` means cheap clones, but you still need `.clone()` on the inner fields
@@ -60,8 +99,7 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Integration tests use `Uuid::new_v4()` workspace IDs for Redis key isolation between parallel tests
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
-- Model variants: 4-bit (~13GB RAM) vs 8-bit (~22GB) — pass model arg to start script: `./scripts/start_mlx.sh InferenceIllusionist/gpt-oss-20b-MLX-4bit`
-- Embedding sidecar runs on **7703** by default, serves `BAAI/bge-m3` (1024-dim vectors) via `infinity-emb` with OpenAI-compatible `/v1/embeddings` endpoint
+- Model variants: 4-bit (~4GB RAM for 7B) vs 8-bit (~8GB) — pass model arg to start script: `./scripts/start_mlx.sh mlx-community/Qwen2.5-7B-Instruct-4bit`
 - `EmbedClient` chunks text into ~512-token overlapping windows (2048 chars, 50% overlap) before embedding — max chunk size is approximate (1 token ≈ 4 chars)
 - Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
@@ -74,6 +112,15 @@ Local AI-powered markdown summarizer. Point it at a directory of `.md` files →
 - Queue status (`GET /status`) is derived from Redis counters (`hawkeye:stats:{ws}:total/completed/failed`), not in-memory state
 - `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
+- Inference client checks HTTP status before parsing JSON — non-2xx responses produce clear "MLX sidecar returned {status}: {body}" errors instead of confusing serde failures
+- Worker retries use exponential backoff (1s → 2s) between attempts, not instant retries
+- `max_tokens: 2048` is set on LLM requests to prevent unbounded response generation (1024 was too low — caused ~40% JSON truncation failures)
+- Content larger than 100KB is truncated before sending to the LLM, with a warning log
+- `/no_think` prefix is conditionally prepended to the system prompt only when the model name contains "qwen3" (case-insensitive) — benign on other models but unnecessary
+- `temperature` is configurable via `--temperature` CLI flag (default 0.1)
+- Inference latency is logged as `elapsed_ms` via `tracing::info!` after each successful LLM call
+- vllm-mlx sidecar supports continuous batching (`--continuous-batching` flag) — main advantage over mlx-lm at high concurrency
+- Benchmark results (20 files, 4 workers, Qwen2.5-7B-4bit): mlx-lm 0.41 files/s vs vllm-mlx 0.40 files/s — nearly identical at low concurrency
 
 ## Tech Debt Scan
 
@@ -117,4 +164,4 @@ If `docs/TECH_DEBT_BASELINE.md` exists, compare against it (new issues, resolved
 3. `cargo clippy -- -D warnings` before every commit
 4. Every handler gets integration test; every client gets unit test
 5. Update knowledge.md after architectural changes
-6. Extract to `shared/` after 3+ occurrences of same pattern
+6. Feature modules import from `crate::shared::*`, never from other features directly

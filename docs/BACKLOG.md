@@ -151,32 +151,16 @@ Hawkeye is a fully functional local knowledge platform:
 
 ---
 
-#### 🔧 Task R1 — Backend refactor to feature-based architecture
+#### 🔧 Task R1 — Backend refactor to feature-based architecture ✅
 **Priority:** Medium | **Effort:** Small | **When:** After Task 7, before Task 11
 
-**GOAL:** Migrate existing flat `src/api/*.rs` + `src/db/*.rs` layout into the `src/features/` + `src/shared/` structure defined in the Feature-Based Architecture section. All existing tests and clippy must still pass.
-
-**SCOPE:**
-- Move `api/ingest.rs` + `scanner/files.rs` + `queue/worker.rs` → `features/ingest/`
-- Move `api/search.rs` + `search/indexer.rs` → `features/search/`
-- Move `api/summary.rs` + `summary/types.rs` → `features/summary/`
-- Move `api/browse.rs` → `features/browse/`
-- Move `api/tags.rs` → `features/search/` (facets are part of search)
-- Move `queue/stream.rs` + `queue/consumer.rs` → `features/queue/`
-- Tasks 6-7 code already in `features/semantic/` (created during those tasks)
-- Move `api/mod.rs` (AppState) → `shared/state.rs`
-- Move `api/health.rs` → `shared/health.rs`
-- Move `api/shutdown.rs` → `shared/shutdown.rs`
-- Move `db/documents.rs` → `shared/db/documents.rs`
-- Move `inference/client.rs` → `shared/inference/client.rs`
-- Update all `mod.rs`, `lib.rs`, `main.rs` re-exports
-- Delete empty old directories
-
-**FAILURE CONDITIONS:**
-- Any test fails after refactor
-- Clippy warnings introduced
-- Public API (HTTP routes) changes
-- Circular module dependencies
+- Migrated flat `src/api/*.rs` + `src/db/*.rs` + `src/queue/*.rs` + `src/scanner/*.rs` + `src/search/*.rs` + `src/summary/*.rs` + `src/inference/*.rs` + `src/embedding/*.rs` + `src/milvus/*.rs` + `src/config.rs` into `src/features/` + `src/shared/` structure
+- `features/`: ingest/ (handler, scanner, worker), queue/ (stream, consumer), search/ (handler, indexer, facets), semantic/ (handler, embed_client, milvus), summary/ (handler, types), browse/ (handler)
+- `shared/`: config.rs, state.rs, db/documents.rs, inference/client.rs, health.rs, shutdown.rs, status.rs, ui.rs
+- Rewrote `lib.rs` (`pub mod features; pub mod shared;`) and `main.rs` with all new import paths
+- Updated `tests/integration_test.rs` imports
+- Deleted all 9 old directories/files
+- 39 unit tests pass, clippy clean, no HTTP route changes
 
 ---
 
@@ -369,10 +353,10 @@ Task 6 (Embedding sidecar)             ✅
 Task 7 (Milvus semantic search)        ✅
   │
   ▼
-🔧 Task R1 (Backend refactor)           ← CURRENT
+🔧 Task R1 (Backend refactor)           ✅
   │
   ▼
-🔍 Tech Debt Audit 1                    ← clean backend before frontend
+🔍 Tech Debt Audit 1                    ← CURRENT (clean backend before frontend)
   │
   ▼
 Task 11 (SvelteKit frontend)
@@ -390,9 +374,9 @@ Task 11 (SvelteKit frontend)
 Task 10 (Workspaces + API keys)
 ```
 
-**Completed:** Tasks 1–7 + cancel/shutdown/docker teardown
+**Completed:** Tasks 1–7, R1 + cancel/shutdown/docker teardown
 **In progress:** —
-**Key additions:** Refactor task (R1) and 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
+**Key additions:** 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
 **Parallelizable:** Tasks 8 and 9 can be done in parallel after SvelteKit migration.
 
 ## Architecture Decisions
@@ -559,9 +543,9 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Task R1 — Backend refactor to feature-based architecture
-**Next Task:** Tech Debt Audit 1 → Task 11 (SvelteKit frontend)
-**Then:** Task 11 — SvelteKit frontend migration (before Tasks 8-9)
+**Current Task:** Tech Debt Audit 1 — Post-backend stabilization
+**Next Task:** Task 11 (SvelteKit frontend)
+**Then:** Tech Debt Audit 2 → Tasks 8-9 in parallel (Neo4j + SSE, built in SvelteKit)
 **Recently Completed:** Cancel endpoint, graceful shutdown (SIGINT/SIGTERM/API), optional docker teardown
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)

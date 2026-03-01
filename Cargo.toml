@@ -26,4 +26,6 @@ deadpool-redis = "0.18"
 redis = { version = "0.27", features = ["aio", "tokio-comp", "streams"] }
 
 [dev-dependencies]
+http-body-util = "0.1.3"
 tempfile = "3"
+tower = { version = "0.5.3", features = ["util"] }
