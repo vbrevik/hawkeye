@@ -295,6 +295,106 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 
 ---
 
+#### 🔍 Tech Debt Audit 4 — Test coverage push ✅
+**When:** After Task 10 + settings extraction
+
+##### Before → After Comparison
+
+| Metric | Baseline | Now | Δ |
+|--------|----------|-----|---|
+| **Unit tests** | 44 | **89** | **+45 (+102%)** |
+| **Integration tests** | 14 | 14 | — |
+| **Total tests** | 58 | **103** | **+45 (+78%)** |
+| **Modules with unit tests** | 10 of 31 | **14 of 30** | **47% coverage** (was 32%) |
+| **Production `.unwrap()`** | ~30 | **0** | **✅ Eliminated** |
+| **Duplicate JSON extraction** | 7 sites (2 files) | **4 sites (1 file)** | **−43%, centralized** |
+| **`+page.svelte` (main)** | 903 lines | **551 lines** | **−39%** |
+| **`settings/+page.svelte`** | 594 lines | **116 lines** | **−80%** |
+| **Clippy warnings** | 0 | 0 | ✅ Maintained |
+| **TODO/FIXME markers** | 0 | 0 | ✅ Maintained |
+| **`#[allow(dead_code)]`** | 10 | 10 | — (all justified) |
+| **Rust LOC** | 4,496 | **5,403** | +907 (tests + features) |
+| **Frontend LOC** | 4,109 | **4,307** | +198 |
+| **Total LOC** | 8,605 | **9,710** | +1,105 |
+| **Rust source files** | ~35 | **45** | +10 (modularization) |
+
+##### Issues Resolved
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| **H1** | Main page 903 lines | Sidebar extracted → **551 lines (−39%)** |
+| **H2** | Duplicate `from_value()` ×7 in 2 files | `FullSummaryRow::into_summary()` — 4 calls in 1 place |
+| **M1** | queue/stream.rs: 0 tests, 305 lines | **16 unit tests** added |
+| **M2** | `#[allow(dead_code)]` comments inconsistent | Comments standardized and justified |
+| **M3** | Production `.unwrap()` (~30 sites) | **All eliminated** — `.expect()` + `map_err` |
+| **M4** | settings/+page.svelte 594 lines | Extracted 3 sub-components → **116 lines (−80%)** |
+| **—** | auth/middleware.rs: 0 tests (security code) | **8 unit tests** (header validation, DB paths, expired keys) |
+| **—** | graph/neo4j.rs: 0 tests, 355 lines | **13 unit tests** (node_id, rel_type_str, serialization) |
+| **—** | search/facets.rs: 0 tests | **8 unit tests** (to_entries, serialization, handler) |
+
+##### Modules with Unit Tests (14 of 30)
+
+| Module | Tests | Notes |
+|--------|-------|-------|
+| `auth/keys.rs` | ✅ | Key generation, hashing |
+| `auth/middleware.rs` | ✅ 8 | Header validation, DB auth paths, expired/revoked keys |
+| `browse/handler.rs` | ✅ | Directory listing |
+| `graph/neo4j.rs` | ✅ 13 | node_id, rel_type_str, build_relationship_tuples, serialization |
+| `ingest/scanner.rs` | ✅ | File discovery, hash-based skip logic |
+| `queue/stream.rs` | ✅ 16 | Redis Stream parsing, extraction, serde |
+| `search/facets.rs` | ✅ 8 | to_entries, FacetEntry/Facets serialization, handler |
+| `search/indexer.rs` | ✅ | Tantivy index CRUD, search, facets |
+| `semantic/embed_client.rs` | ✅ | Chunking, embedding HTTP client |
+| `semantic/milvus.rs` | ✅ | Milvus REST client |
+| `summary/types.rs` | ✅ | Summary struct serialization |
+| `shared/config.rs` | ✅ | CLI arg parsing |
+| `shared/health.rs` | ✅ | Health check types |
+| `shared/inference/client.rs` | ✅ | MLX sidecar HTTP client |
+
+##### Modules Without Unit Tests (16 of 30)
+
+| Module | Reason | Risk |
+|--------|--------|------|
+| `auth/handler.rs` | Thin handler — covered by integration tests | Low |
+| `events/handler.rs` | SSE streaming — hard to unit test | Low |
+| `events/publisher.rs` | Redis pub/sub — needs live Redis | Low |
+| `graph/handler.rs` | Thin handler — covered by integration tests | Low |
+| `ingest/handler.rs` | Thin handler — covered by integration tests | Low |
+| `ingest/worker.rs` | Orchestration — covered by integration tests | Low |
+| `queue/consumer.rs` | Orchestration — covered by integration tests | Low |
+| `search/handler.rs` | Thin handler — covered by integration tests | Low |
+| `semantic/handler.rs` | Thin handler — covered by integration tests | Low |
+| `summary/handler.rs` | Thin handler — covered by integration tests | Low |
+| `shared/db/documents.rs` | SQL queries — covered by integration tests | Low |
+| `shared/db/workspaces.rs` | SQL queries — covered by integration tests | Low |
+| `shared/error.rs` | Simple enum — trivial | None |
+| `shared/shutdown.rs` | Signal handling — hard to unit test | Low |
+| `shared/state.rs` | Struct definition — trivial | None |
+| `shared/status.rs` | Thin handler — covered by integration tests | Low |
+
+##### Remaining Items
+
+| Priority | Issue | Notes |
+|----------|-------|-------|
+| Low | 16 modules lack unit tests | All are thin handlers, orchestration, or DB queries — covered by 14 integration tests |
+| Low | `GraphCanvas.svelte` 340 lines | Complex canvas rendering — decomposition optional |
+| Low | 3 silent `catch` in frontend polling | Correct for transient failures |
+| Low | Possibly unused Cargo deps | Run `cargo machete` to verify |
+
+##### Health Score
+
+| Category | Before | After | Grade |
+|----------|--------|-------|-------|
+| **Correctness** | Clippy clean, 0 TODO | Unchanged | **A** |
+| **Safety** | ~30 production unwraps | 0 production unwraps | **A** (was B) |
+| **Test coverage** | 44 unit, 10/31 modules | 89 unit, 14/30 modules | **A−** (was B) |
+| **DRY** | 7 duplicate JSON extractions | 4 centralized in 1 method | **A** (was B+) |
+| **Maintainability** | 903 + 594 LOC pages | 551 + 116 LOC pages | **A** (was B) |
+| **Frontend quality** | 0 TS suppressions | Unchanged | **A** |
+| **Overall** | — | — | **A** (was **B+**) |
+
+---
+
 ### Improvements & Polish
 
 These are smaller tasks without full prompt contracts:
@@ -356,9 +456,12 @@ Task 11 (SvelteKit frontend)            ✅
   │
   ▼
 Task 10 (Workspaces + API keys)        ✅
+  │
+  ▼
+🔍 Tech Debt Audit 4                    ✅ (test coverage push)
 ```
 
-**Completed:** Tasks 1–9, R1, Tech Debt Audits 1–3, Task 11 + cancel/shutdown/docker teardown
+**Completed:** Tasks 1–9, R1, Tech Debt Audits 1–4, Task 11 + cancel/shutdown/docker teardown
 **In progress:** —
 **Key additions:** 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
 
@@ -528,8 +631,9 @@ web/
 
 **Current Task:** Improvements & Polish
 **Next Task:** —
-**Recently Completed:** Task 10 (Workspaces + API keys + revoke), Tech Debt Audits 2+3 (combined), Task 9 (SSE /events)
+**Recently Completed:** Tech Debt Audit 4 (test coverage push: 44→89 unit tests, settings extraction), Task 10 (Workspaces + API keys + revoke)
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)
+**Health Grade:** **A** (103 total tests, 0 production unwraps, clippy clean, all pages <600 LOC)
 
 > Historical design docs archived in `docs/archive/`.
