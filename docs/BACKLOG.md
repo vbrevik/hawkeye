@@ -98,7 +98,7 @@ Hawkeye is a fully functional local knowledge platform:
 | **Storage** | ✅ | Postgres (documents, summaries, relationships), Tantivy index |
 | **Ops** | ✅ | Health checks, cancel in-flight jobs, graceful shutdown, optional docker teardown |
 | **UI** | ✅ | Inline HTML (search, browse, ingest, facets, detail panel, drawer) |
-| **Semantic Search** | 🔜 | Embedding sidecar + Milvus (Tasks 6-7) |
+| **Semantic Search** | 🟡 | Embedding sidecar ✅ + Milvus vector store (Task 7) |
 | **Frontend** | 🔜 | SvelteKit migration with multi-page routing (Task 11) |
 | **Knowledge Graph** | 🔜 | Neo4j with extracted relationships + graph viz page (Task 8) |
 | **Real-Time** | 🔜 | SSE events for live ingest progress in SvelteKit UI (Task 9) |
@@ -126,23 +126,15 @@ Hawkeye is a fully functional local knowledge platform:
 
 ---
 
-#### Task 6 — Embedding sidecar (bge-m3)
+#### Task 6 — Embedding sidecar (bge-m3) ✅
 **Priority:** Medium | **Effort:** Small
 
-**GOAL:** A startup script runs infinity-emb with bge-m3 on port 7703. `EmbedClient` in Rust sends text to the sidecar and receives `Vec<Vec<f32>>` embeddings (dim 1024). A unit test verifies the client against a mock HTTP server.
-
-**CONSTRAINTS:**
-- Use `infinity-emb` Python package (same pattern as MLX sidecar)
-- Model: `BAAI/bge-m3` (1024 dimensions)
-- Chunk long documents before embedding (max ~512 tokens per chunk)
-- `embed_url` added to AppConfig with default `http://localhost:7703`
-- No new Rust dependencies beyond reqwest (already in project)
-
-**FAILURE CONDITIONS:**
-- Embedding dimension ≠ 1024
-- No chunking logic for long documents
-- Client panics when sidecar is offline (should return error)
-- No unit test
+- `scripts/start_embed.sh` + `scripts/embed_server.py` — FastAPI server using sentence-transformers (OpenAI-compatible `/v1/embeddings`)
+- `src/embedding/client.rs` — `EmbedClient` with `make_chunks()` (2048 char windows, 50% overlap) and `embed_chunks()` calling `/v1/embeddings`
+- `src/config.rs` — `embed_url` (default `http://localhost:7703`) and `embed_model` (default `BAAI/bge-m3`)
+- 8 unit tests (5 chunking + 3 mock HTTP server), all passing
+- Tested live: single + batch embeddings return 1024-dim vectors correctly
+- Note: switched from `infinity-emb` to `sentence-transformers` + FastAPI due to Python 3.13 compatibility issues
 
 ---
 
@@ -379,10 +371,10 @@ Task 3 (Replace .summary.json)         ✅
   ├──► Task 5 (Redis Streams queue)        ✅
   │
   ▼
-Task 6 (Embedding sidecar)             ← CURRENT
+Task 6 (Embedding sidecar)             ✅
   │
   ▼
-Task 7 (Milvus semantic search)
+Task 7 (Milvus semantic search)        ← CURRENT
   │
   ▼
 🔧 Task R1 (Backend refactor)           ← feature-based architecture
@@ -406,8 +398,8 @@ Task 11 (SvelteKit frontend)
 Task 10 (Workspaces + API keys)
 ```
 
-**Completed:** Tasks 1–5 + cancel/shutdown/docker teardown
-**In progress:** Task 6 (embedding sidecar)
+**Completed:** Tasks 1–6 + cancel/shutdown/docker teardown
+**In progress:** Task 7 (Milvus vector store + semantic search)
 **Key additions:** Refactor task (R1) and 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
 **Parallelizable:** Tasks 8 and 9 can be done in parallel after SvelteKit migration.
 
@@ -575,8 +567,8 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Task 6 — Embedding sidecar (bge-m3)
-**Next Task:** Task 7 — Milvus vector store + semantic search
+**Current Task:** Task 7 — Milvus vector store + semantic search
+**Next Task:** Task R1 — Backend refactor to feature-based architecture
 **Then:** Task 11 — SvelteKit frontend migration (before Tasks 8-9)
 **Recently Completed:** Cancel endpoint, graceful shutdown (SIGINT/SIGTERM/API), optional docker teardown
 **Blockers:** None
