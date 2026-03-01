@@ -1,7 +1,7 @@
 # 🔍 Tech Debt Baseline — Hawkeye
 
 **Date:** 2026-03-01
-**Commit:** c1323f1
+**Commit:** c1323f1 → updated efc3302
 **Scanned:** 27 files, 3,224 LOC
 
 ## Summary
@@ -11,7 +11,7 @@
 | **Rust source files** | 27 | Manageable |
 | **Total LOC (src/)** | 3,224 | Small project |
 | **Integration test LOC** | 433 | Good coverage |
-| **Unit tests** | 23 passing | ✅ |
+| **Unit tests** | 26 passing | ✅ |
 | **Integration tests** | 4 passing | ✅ |
 | **Clippy** | Clean (`-D warnings`) | ✅ |
 | **TODOs/FIXMEs/HACKs** | 0 | ✅ |
@@ -34,17 +34,13 @@ None found.
 
 ## 🟡 Issues
 
-### 1. `Uuid::nil()` hardcoded everywhere (9 occurrences)
+### ~~1. `Uuid::nil()` hardcoded everywhere (9 occurrences)~~ ✅ RESOLVED (efc3302)
 
-- **Where:** `src/api/ingest.rs` (×2), `src/api/status.rs`, `src/api/summary.rs`, `src/queue/worker.rs`, `src/main.rs`, `tests/integration_test.rs` (×3)
-- **Risk:** When Task 10 (Workspaces) lands, every one of these needs updating. Easy to miss one.
-- **Fix effort:** 5 min — extract `DEFAULT_WORKSPACE_ID` constant
+- **Fix applied:** Extracted `DEFAULT_WORKSPACE_ID` constant in `src/config.rs`, replaced all 9 occurrences across 7 files
 
-### 2. `#[allow(dead_code)]` — 6 occurrences
+### ~~2. `#[allow(dead_code)]` — 6 occurrences~~ ✅ RESOLVED (efc3302)
 
-- **Where:** `src/db/documents.rs` (×4: `DocumentRow`, `SummaryRow`, `get_document_by_path`, `get_summary_by_document`), `src/search/indexer.rs` (×1), `src/queue/stream.rs` (×1: `cleanup()`)
-- **Risk:** Dead code hiding behind annotations. The `db/documents.rs` ones are most concerning — 2 full structs and 2 query functions marked dead.
-- **Fix effort:** 10 min — audit each, use or delete
+- **Fix applied:** Audited all 6 annotations — all are legitimate (structs populated by `sqlx::FromRow`, functions used in integration tests, field used internally). Added explanatory comments to each so intent is clear
 
 ### 3. No unified error type
 
@@ -53,11 +49,9 @@ None found.
 - **Risk:** Inconsistent error responses for frontend; boilerplate accumulation
 - **Fix effort:** 30 min — create `AppError` enum implementing `IntoResponse`
 
-### 4. `expect()` in production paths — 8 occurrences
+### ~~4. `expect()` in production paths~~ ✅ RESOLVED (efc3302)
 
-- **Where:** `src/main.rs` (×7 — startup), `src/inference/client.rs` (×1 — `InferenceClient::new()`)
-- **Risk:** `main.rs` startup expects are acceptable. `inference/client.rs` expect should return `Result`.
-- **Fix effort:** 5 min for the inference client fix
+- **Fix applied:** `InferenceClient::new()` now returns `Result<Self, reqwest::Error>` instead of panicking. All 10 call sites updated. `main.rs` startup expects kept (appropriate for startup panics)
 
 ### 5. Error handling inconsistency
 
@@ -72,12 +66,10 @@ None found.
 - **Risk:** Regressions in handler wiring won't be caught
 - **Fix effort:** Fill incrementally with each task
 
-### 7. Missing logging in handlers
+### ~~7. Missing logging in handlers~~ ⚠️ PARTIALLY RESOLVED (efc3302)
 
-- **Where:** `handle_search`, `handle_facets`, `handle_browse`, `handle_summary`, `handle_health`
-- **What:** No `tracing` calls — errors silently returned as HTTP status codes
-- **Risk:** Production issues hard to debug
-- **Fix effort:** 15 min
+- **Fix applied:** Added `tracing::error!` to `handle_facets` in `src/api/tags.rs` (was silently swallowing Redis errors via `unwrap_or_default()`)
+- **Remaining:** `handle_search`, `handle_browse`, `handle_summary`, `handle_health` still lack `tracing` calls — defer to Task R1 (unified AppError will add structured logging to all handlers)
 
 ## ⚪ Minor
 
@@ -106,12 +98,12 @@ None found.
 
 ## Recommended Priority Actions
 
-| Priority | Action | Effort | When |
-|----------|--------|--------|------|
-| **P1** | Extract `DEFAULT_WORKSPACE_ID` constant | 5 min | Before Task 6 |
-| **P2** | Audit and clean up `#[allow(dead_code)]` in `db/documents.rs` | 10 min | Before Task 6 |
-| **P3** | Add `tracing::error!` to handlers that silently swallow errors | 15 min | Before Task 6 |
-| **P3** | Fix `expect()` in `InferenceClient::new()` to return `Result` | 5 min | Before Task 6 |
-| **Defer** | Unified `AppError` type | 30 min | Task R1 refactor |
+| Priority | Action | Effort | Status |
+|----------|--------|--------|--------|
+| ~~**P1**~~ | ~~Extract `DEFAULT_WORKSPACE_ID` constant~~ | ~~5 min~~ | ✅ Done (efc3302) |
+| ~~**P2**~~ | ~~Audit and clean up `#[allow(dead_code)]`~~ | ~~10 min~~ | ✅ Done (efc3302) |
+| ~~**P3**~~ | ~~Add `tracing::error!` to handlers~~ | ~~15 min~~ | ⚠️ Partial (efc3302) |
+| ~~**P3**~~ | ~~Fix `expect()` in `InferenceClient::new()`~~ | ~~5 min~~ | ✅ Done (efc3302) |
+| **Defer** | Unified `AppError` type + remaining handler logging | 30 min | Task R1 refactor |
 | **Defer** | Integration test coverage gaps | Incremental | Each task |
 | **Defer** | `ui.rs` (972 LOC) | Deleted | Task 11 |
