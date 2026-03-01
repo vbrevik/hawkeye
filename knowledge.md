@@ -82,8 +82,9 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `web/` — SvelteKit SPA (adapter-static → `static/` dir served by Axum via tower-http ServeDir)
 - `web/src/routes/+page.svelte` — Main app page (three-column layout: sidebar, results, detail panel)
 - `web/src/routes/+layout.svelte` — App shell (CSS import, ToastContainer)
-- `web/src/lib/api/` — TypeScript API client modules (search, browse, ingest, summary, status, health, shutdown)
-- `web/src/lib/api/types.ts` — Shared TypeScript types matching Rust API shapes
+- `web/src/lib/api/client.ts` — Shared `apiFetch<T>()` wrapper with `ApiError` class, centralized `res.ok` check, auth header hook for Task 10
+- `web/src/lib/api/` — TypeScript API client modules (search, browse, ingest, summary, status, health, shutdown, graph) — all use `apiFetch`
+- `web/src/lib/api/types.ts` — Shared TypeScript types matching Rust API shapes (includes `FileError` for queue errors)
 - `web/src/lib/features/` — Feature components (search/SearchBar, search/ResultCard, browse/FileBrowser, facets/FacetCloud, status/InferenceBlock, status/QueueStats, summary/DetailPanel, summary/SummaryDrawer, graph/GraphCanvas, events/useEvents)
 - `web/src/lib/api/graph.ts` — TypeScript client for `/graph/entity/:name` and `/graph/document/:id`
 - `web/src/routes/graph/+page.svelte` — Knowledge graph exploration page with interactive force-directed Canvas visualization
@@ -176,7 +177,7 @@ Run all checks **in parallel** for speed:
 6. **Test coverage** — cross-reference `grep 'pub async fn handle_'` against `grep 'async fn test_'` to find untested handlers
 7. **TODOs/unsafe** — `grep -rn 'TODO\|FIXME\|HACK\|XXX' src/` and `grep -rn 'unsafe' src/`
 
-For **TypeScript/SvelteKit** (when `web/` exists): `any` types, `// @ts-ignore`, components >150 LOC, raw `fetch()`, `console.log` in production.
+For **TypeScript/SvelteKit** (when `web/` exists): `any` types, `// @ts-ignore`, components >150 LOC, raw `fetch()` (should use `apiFetch` from `client.ts`), `console.log` in production.
 
 ### Report Format
 

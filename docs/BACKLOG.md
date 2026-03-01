@@ -199,18 +199,16 @@ Deferred to later audits: dependency audit, config splitting, full documentation
 
 ---
 
-#### 🔍 Tech Debt Audit 2 — Post-frontend migration
-**When:** After Task 11 (before building new features in SvelteKit)
+#### 🔍 Tech Debt Audit 2 — Post-frontend migration ✅
+**When:** After Task 11 (combined with Audit 3 into a single pass)
 
-Ensure the SvelteKit foundation is solid before building on it:
-
-- [ ] **Component size** — any component over ~150 lines should be split
-- [ ] **API type drift** — do TypeScript types in `features/*/types.ts` match actual Rust API responses?
-- [ ] **Accessibility** — keyboard navigation, ARIA labels, focus management preserved from inline HTML
-- [ ] **Bundle size** — check Vite build output, ensure no unnecessary dependencies
-- [ ] **Backend cleanup** — delete `src/api/ui.rs` and any orphaned inline HTML helpers
-- [ ] **Shared component extraction** — identify repeated patterns across features and extract to `shared/components/`
-- [ ] **Error boundaries** — do API failures show user-friendly messages, not raw JSON?
+- [x] **Component size** — audited: `+page.svelte` (446 lines) is over threshold but functional as a page shell; GraphCanvas (340) and graph page (278) are acceptable single-responsibility components. DetailPanel (218) and SummaryDrawer (185) are borderline — defer splitting.
+- [x] **API type drift** — **FIXED:** `SearchResult` was missing `topics` field in Rust (Tantivy indexed it but didn't return it). `QueueStatus.errors` was `string[]` in TS but `Vec<FileError>` in Rust — added `FileError` interface with `{file, error, attempts}`.
+- [x] **Accessibility** — added `aria-label` to SearchBar and graph page search input. ResultCard already had `role="button"` + `tabindex`. Full a11y pass deferred.
+- [x] **Bundle size** — checked: largest client chunk 25.69 kB gzip (Svelte runtime), total ~85 kB gzip. No bloat.
+- [x] **Backend cleanup** — `src/shared/ui.rs` already deleted in prior task. No orphans found.
+- [x] **Shared component extraction** — **FIXED:** extracted `apiFetch<T>()` wrapper in `web/src/lib/api/client.ts` — centralized `res.ok` check, `ApiError` class, auth header hook ready for Task 10. All 8 API modules migrated.
+- [x] **Error boundaries** — **FIXED:** `health.ts`, `status.ts`, `search.ts` (fetchFacets) were missing `res.ok` checks — now all use `apiFetch` which throws `ApiError` on non-OK responses. Components that poll (`status.ts` store) catch errors gracefully.
 
 ---
 
@@ -247,19 +245,17 @@ Ensure the SvelteKit foundation is solid before building on it:
 
 ---
 
-#### 🔍 Tech Debt Audit 3 — Pre-auth hardening
-**When:** After Tasks 8-9 (before adding auth in Task 10)
+#### 🔍 Tech Debt Audit 3 — Pre-auth hardening ✅
+**When:** Combined with Audit 2 into a single pass
 
-Auth is cross-cutting and touches everything — clean house first:
-
-- [ ] **Handler signatures** — consistent extractor ordering across all handlers
-- [ ] **Workspace ID propagation** — audit all `Uuid::nil()` usages; prepare for real workspace IDs
-- [ ] **Redis key isolation** — verify all Redis keys are workspace-scoped
-- [ ] **Neo4j data isolation** — verify graph queries filter by workspace
-- [ ] **Milvus data isolation** — verify vector searches filter by workspace_id
-- [ ] **Integration test isolation** — all tests use unique workspace IDs (no cross-contamination)
-- [ ] **Frontend API layer** — ready to pass `Authorization` header from a central client?
-- [ ] **Error response consistency** — all endpoints return same error shape for 4xx/5xx
+- [x] **Handler signatures** — all handlers use `State(state): State<Arc<AppState>>` as first extractor, then `Path`/`Query`/`Json`. Consistent ✅
+- [x] **Workspace ID propagation** — `Uuid::nil()` only in `DEFAULT_WORKSPACE_ID` constant (`shared/config.rs`). All code references the constant. Ready for real workspace IDs ✅
+- [x] **Redis key isolation** — all keys workspace-scoped: `hawkeye:jobs:{ws}`, `hawkeye:stats:{ws}:*`, `hawkeye:errors:{ws}`, `hawkeye:events:{ws}` ✅
+- [x] **Neo4j data isolation** — ⚠️ **GAP FOUND:** No `workspace_id` in Neo4j queries — graph data is shared across all workspaces. **Deferred to Task 10** — add workspace property to Document nodes and filter in Cypher queries.
+- [x] **Milvus data isolation** — `workspace_id` field in collection schema, used in `insert_chunks()` and `search_similar()` filter ✅
+- [x] **Integration test isolation** — tests use `Uuid::new_v4()` for unique workspace IDs ✅
+- [x] **Frontend API layer** — **FIXED:** extracted `apiFetch()` wrapper with auth header hook (commented placeholder for Task 10). All 8 API modules migrated.
+- [x] **Error response consistency** — **FIXED:** `handle_semantic_search` changed from `Json<Vec<...>>` (empty on error) to `Result<Json<...>, AppError>`. All handlers now return `Result<..., AppError>` with `{ error: string }` JSON shape. Only exception: `handle_mlx_status` and `handle_facets` use graceful degradation (return default values on error) — acceptable.
 
 ---
 
@@ -338,22 +334,21 @@ Task 7 (Milvus semantic search)        ✅
 Task 11 (SvelteKit frontend)            ✅
   │
   ▼
-🔍 Tech Debt Audit 2                    (validate frontend foundation)
+🔍 Tech Debt Audit 2                    ✅ (combined with Audit 3)
   │
   ├──► Task 8 (Neo4j + graph viz)          ✅
   ├──► Task 9 (SSE + live UI)              ✅
   │
   ▼
-🔍 Tech Debt Audit 3                    ← CURRENT (harden before auth)
+🔍 Tech Debt Audit 3                    ✅ (combined with Audit 2)
   │
   ▼
-Task 10 (Workspaces + API keys)
+Task 10 (Workspaces + API keys)        ← CURRENT
 ```
 
-**Completed:** Tasks 1–9, R1, Tech Debt Audit 1, Task 11 + cancel/shutdown/docker teardown
+**Completed:** Tasks 1–9, R1, Tech Debt Audits 1–3, Task 11 + cancel/shutdown/docker teardown
 **In progress:** —
 **Key additions:** 3 tech debt audits at phase boundaries. Recurring hygiene practices applied during every task.
-**Parallelizable:** Tech Debt Audits 2 and 3 can be combined into a single pass.
 
 ## Architecture Decisions
 
@@ -519,9 +514,9 @@ web/
 
 ## Task Tracking
 
-**Current Task:** Tech Debt Audits 2+3 (combined pass — validate frontend + pre-auth hardening)
-**Next Task:** Task 10 (Workspaces + API keys)
-**Recently Completed:** Task 9 (SSE /events + live UI + integration test), Task 8 (Neo4j knowledge graph + graph viz)
+**Current Task:** Task 10 — Workspaces + API key management
+**Next Task:** Improvements & Polish
+**Recently Completed:** Tech Debt Audits 2+3 (combined), Task 9 (SSE /events), Task 8 (Neo4j graph)
 **Blockers:** None
 **Dependencies:** Docker Compose stack must be running for integration tests (Postgres 5433, Redis 6379)
 

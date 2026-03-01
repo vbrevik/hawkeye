@@ -3,6 +3,8 @@ use axum::http::{Request, StatusCode};
 use axum::{routing::{get, post}, Json, Router};
 use clap::Parser;
 use hawkeye::{
+    features::auth::handler::{handle_create_workspace, handle_create_api_key, handle_list_workspace_docs},
+    features::auth::middleware::require_auth,
     features::browse::handler::handle_browse,
     features::events::{
         handler::handle_events,
@@ -384,6 +386,33 @@ async fn create_test_app_state(
         shutdown_docker: AtomicBool::new(false),
     });
     (state, pg_clone)
+}
+
+/// Helper: send a POST request with JSON body.
+async fn post_json(app: Router, uri: &str, body: serde_json::Value) -> (StatusCode, Vec<u8>) {
+    let req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+    (status, body)
+}
+
+/// Helper: send a GET request with an Authorization Bearer header.
+async fn get_with_auth(app: Router, uri: &str, token: &str) -> (StatusCode, Vec<u8>) {
+    let req = Request::builder()
+        .uri(uri)
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+    (status, body)
 }
 
 /// Helper: send a GET request to the app and return (status, body as Vec<u8>).
@@ -835,6 +864,133 @@ async fn test_graph_handler_without_neo4j() {
         "Expected 'Knowledge graph not available' error, got: {}",
         text
     );
+}
+
+#[tokio::test]
+async fn test_workspace_and_auth() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, pg_pool) = create_test_app_state(indexer).await;
+
+    let protected = Router::new()
+        .route("/workspaces/{id}/docs", get(handle_list_workspace_docs))
+        .route_layer(axum::middleware::from_fn_with_state(state.clone(), require_auth));
+
+    let app = Router::new()
+        .route("/workspaces", post(handle_create_workspace))
+        .route("/api-keys", post(handle_create_api_key))
+        .merge(protected)
+        .with_state(state);
+
+    // 1. Create workspace
+    let (status, body) = post_json(app.clone(), "/workspaces", json!({"name": "Test Workspace"})).await;
+    assert_eq!(status, StatusCode::OK);
+    let ws: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let ws_id_str = ws["id"].as_str().unwrap();
+    let ws_id: Uuid = ws_id_str.parse().unwrap();
+    assert_eq!(ws["name"], "Test Workspace");
+
+    // 2. Create workspace with empty name → 400
+    let (status, _) = post_json(app.clone(), "/workspaces", json!({"name": "  "})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // 3. Create API key for non-existent workspace → 404
+    let (status, _) = post_json(app.clone(), "/api-keys", json!({
+        "workspace_id": Uuid::new_v4().to_string(),
+        "label": "bad"
+    })).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // 4. Create API key for the workspace
+    let (status, body) = post_json(app.clone(), "/api-keys", json!({
+        "workspace_id": ws_id_str,
+        "label": "test-key"
+    })).await;
+    assert_eq!(status, StatusCode::OK);
+    let key_resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let api_key = key_resp["key"].as_str().unwrap().to_string();
+    assert!(api_key.starts_with("hke_"), "Key should start with hke_");
+    assert_eq!(api_key.len(), 36, "Key should be 36 chars (hke_ + 32)");
+    assert_eq!(key_resp["workspace_id"], ws_id_str);
+    assert_eq!(key_resp["label"], "test-key");
+    assert!(key_resp["key_prefix"].as_str().unwrap().starts_with("hke_"));
+
+    // 5. GET /workspaces/:id/docs without auth → 401
+    let (status, body) = get_request(app.clone(), &format!("/workspaces/{}/docs", ws_id)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let err: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(err["error"].as_str().unwrap().contains("Authorization"));
+
+    // 6. GET /workspaces/:id/docs with invalid key → 401
+    let (status, _) = get_with_auth(
+        app.clone(),
+        &format!("/workspaces/{}/docs", ws_id),
+        "hke_invalidkey00000000000000000000",
+    ).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // 7. GET /workspaces/:id/docs with valid key → 200 (empty)
+    let (status, body) = get_with_auth(
+        app.clone(),
+        &format!("/workspaces/{}/docs", ws_id),
+        &api_key,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    let docs: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(docs["workspace_id"], ws_id_str);
+    assert!(docs["documents"].as_array().unwrap().is_empty());
+
+    // 8. Insert a document and verify it appears
+    documents::upsert_document(&pg_pool, ws_id, "/test/auth.md", "sha256:authtest", Some(100))
+        .await
+        .unwrap();
+    let (status, body) = get_with_auth(
+        app.clone(),
+        &format!("/workspaces/{}/docs", ws_id),
+        &api_key,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    let docs: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let doc_list = docs["documents"].as_array().unwrap();
+    assert_eq!(doc_list.len(), 1);
+    assert_eq!(doc_list[0]["source_path"], "/test/auth.md");
+
+    // 9. Access another workspace with this key → 401
+    let other_ws_id = Uuid::new_v4();
+    let (status, _) = get_with_auth(
+        app.clone(),
+        &format!("/workspaces/{}/docs", other_ws_id),
+        &api_key,
+    ).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // 10. Non-Bearer auth format → 401
+    let req = Request::builder()
+        .uri(format!("/workspaces/{}/docs", ws_id))
+        .header("authorization", "Basic dXNlcjpwYXNz")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Cleanup
+    sqlx::query("DELETE FROM documents WHERE workspace_id = $1")
+        .bind(ws_id)
+        .execute(&pg_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM api_keys WHERE workspace_id = $1")
+        .bind(ws_id)
+        .execute(&pg_pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM workspaces WHERE id = $1")
+        .bind(ws_id)
+        .execute(&pg_pool)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

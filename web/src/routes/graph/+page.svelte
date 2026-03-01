@@ -71,6 +71,7 @@
 				bind:value={query}
 				onkeydown={handleKeydown}
 				placeholder="Search entity, tag, or topic…"
+				aria-label="Search knowledge graph"
 				class="graph-input"
 			/>
 			<button onclick={searchEntity} disabled={loading || !query.trim()} class="graph-btn">

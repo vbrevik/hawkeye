@@ -14,6 +14,7 @@ pub struct SearchResult {
     pub title: String,
     pub tags: String,
     pub entities: String,
+    pub topics: String,
     pub score: f32,
 }
 
@@ -174,6 +175,7 @@ impl SearchIndexer {
                 title: get(self.title),
                 tags: get(self.tags),
                 entities: get(self.entities),
+                topics: get(self.topics),
                 score,
             });
         }

@@ -28,6 +28,7 @@
 		bind:this={inputEl}
 		bind:value
 		placeholder="Search summaries…"
+		aria-label="Search summaries"
 		autocomplete="off"
 		spellcheck="false"
 		{onkeydown}

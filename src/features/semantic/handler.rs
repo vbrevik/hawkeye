@@ -1,5 +1,6 @@
 use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use crate::shared::db::documents;
+use crate::shared::error::AppError;
 use crate::shared::state::AppState;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -26,16 +27,17 @@ pub struct SemanticResult {
 pub async fn handle_semantic_search(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SemanticQuery>,
-) -> Json<Vec<SemanticResult>> {
+) -> Result<Json<Vec<SemanticResult>>, AppError> {
     let limit = params.limit.unwrap_or(10);
 
-    match semantic_search_inner(&state, &params.q, limit).await {
-        Ok(results) => Json(results),
-        Err(e) => {
+    let results = semantic_search_inner(&state, &params.q, limit)
+        .await
+        .map_err(|e| {
             tracing::error!(error = %e, query = %params.q, "semantic search failed");
-            Json(vec![])
-        }
-    }
+            AppError::internal(e)
+        })?;
+
+    Ok(Json(results))
 }
 
 async fn semantic_search_inner(

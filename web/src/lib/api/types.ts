@@ -85,12 +85,18 @@ export interface Summary {
 	word_count: number;
 }
 
+export interface FileError {
+	file: string;
+	error: string;
+	attempts: number;
+}
+
 export interface QueueStatus {
 	total: number;
 	completed: number;
 	failed: number;
 	in_progress: number;
-	errors: string[];
+	errors: FileError[];
 }
 
 export interface MlxStatus {
@@ -112,6 +118,34 @@ export interface HealthResponse {
 
 export interface ShutdownResponse {
 	message: string;
+}
+
+export interface CreateWorkspaceResponse {
+	id: string;
+	name: string;
+	created_at: string;
+}
+
+export interface CreateApiKeyResponse {
+	id: string;
+	key: string;
+	key_prefix: string;
+	workspace_id: string;
+	label: string;
+	created_at: string;
+}
+
+export interface WorkspaceDoc {
+	id: string;
+	source_path: string;
+	source_hash: string;
+	created_at: string;
+	title: string | null;
+}
+
+export interface WorkspaceDocsResponse {
+	workspace_id: string;
+	documents: WorkspaceDoc[];
 }
 
 export interface DocumentDoneEvent {

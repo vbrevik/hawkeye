@@ -3,7 +3,7 @@ mod shared;
 
 use shared::state::AppState;
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{middleware, Router};
 use tower_http::services::{ServeDir, ServeFile};
 use clap::Parser;
 use shared::config::{AppConfig, DEFAULT_WORKSPACE_ID};
@@ -150,7 +150,14 @@ async fn main() {
         shutdown_docker: AtomicBool::new(false),
     });
 
+    let protected_workspace_routes = Router::new()
+        .route("/workspaces/{id}/docs", get(features::auth::handler::handle_list_workspace_docs))
+        .route_layer(middleware::from_fn_with_state(state.clone(), features::auth::middleware::require_auth));
+
     let app = Router::new()
+        .route("/workspaces", post(features::auth::handler::handle_create_workspace))
+        .route("/api-keys", post(features::auth::handler::handle_create_api_key))
+        .merge(protected_workspace_routes)
         .route("/ingest", post(features::ingest::handler::handle_ingest))
         .route("/cancel", post(features::ingest::handler::handle_cancel))
         .route("/shutdown", post(shared::shutdown::handle_shutdown))
