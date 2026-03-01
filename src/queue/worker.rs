@@ -1,6 +1,8 @@
 use crate::config::DEFAULT_WORKSPACE_ID;
 use crate::db::documents::{self, InsertSummary};
+use crate::embedding::client::EmbedClient;
 use crate::inference::client::InferenceClient;
+use crate::milvus::client::MilvusClient;
 use crate::scanner::files::ScannedFile;
 use crate::search::indexer::SearchIndexer;
 use sqlx::PgPool;
@@ -15,6 +17,8 @@ pub async fn process_file(
     client: &InferenceClient,
     indexer: &Arc<Mutex<SearchIndexer>>,
     pool: &PgPool,
+    embed: &EmbedClient,
+    milvus: &MilvusClient,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let content = tokio::fs::read_to_string(&file.path).await?;
     let filename = file
@@ -68,6 +72,25 @@ pub async fn process_file(
                     })?;
 
                 tracing::info!(file = %file.path.display(), "summarized");
+
+                // Embed and store vectors (non-critical — log errors, don't fail ingest)
+                let ws_id = DEFAULT_WORKSPACE_ID.to_string();
+                let doc_id_str = doc.id.to_string();
+                match embed.embed_chunks(&content).await {
+                    Ok(vectors) => {
+                        if let Err(e) = milvus.delete_by_doc_id(&doc_id_str).await {
+                            tracing::warn!(file = %file.path.display(), error = %e, "milvus delete failed");
+                        }
+                        match milvus.insert_chunks(&doc_id_str, &ws_id, &vectors).await {
+                            Ok(n) => tracing::info!(file = %file.path.display(), chunks = n, "vectors stored in milvus"),
+                            Err(e) => tracing::warn!(file = %file.path.display(), error = %e, "milvus insert failed"),
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(file = %file.path.display(), error = %e, "embedding failed — doc searchable via full-text only");
+                    }
+                }
+
                 return Ok(());
             }
             Err(e) => {

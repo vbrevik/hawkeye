@@ -2,7 +2,9 @@ use axum::{routing::post, Json, Router};
 use hawkeye::{
     config::DEFAULT_WORKSPACE_ID,
     db::documents,
+    embedding::client::EmbedClient,
     inference::client::InferenceClient,
+    milvus::client::MilvusClient,
     queue::{
         consumer::spawn_consumers,
         stream::RedisQueue,
@@ -91,6 +93,9 @@ async fn test_full_pipeline() {
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
+    // Embed/Milvus pointed at non-existent URLs — worker logs warnings but doesn't fail
+    let embed = Arc::new(EmbedClient::new("http://127.0.0.1:1", "mock-model").unwrap());
+    let milvus = Arc::new(MilvusClient::new("http://127.0.0.1:1").unwrap());
 
     // 4. Scan and publish
     let scan = scan_directory(dir.path(), &HashMap::new()).unwrap();
@@ -106,6 +111,8 @@ async fn test_full_pipeline() {
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
+        embed.clone(),
+        milvus.clone(),
         2,
         shutdown_rx,
     );
@@ -186,6 +193,8 @@ async fn test_skip_logic_on_rerun() {
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
+    let embed = Arc::new(EmbedClient::new("http://127.0.0.1:1", "mock-model").unwrap());
+    let milvus = Arc::new(MilvusClient::new("http://127.0.0.1:1").unwrap());
 
     // First run — process all 3
     let scan1 = scan_directory(dir.path(), &HashMap::new()).unwrap();
@@ -198,6 +207,8 @@ async fn test_skip_logic_on_rerun() {
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
+        embed.clone(),
+        milvus.clone(),
         2,
         shutdown_rx,
     );
@@ -276,6 +287,8 @@ async fn test_cancel_ingestion() {
     let indexer = Arc::new(Mutex::new(
         SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
     ));
+    let embed = Arc::new(EmbedClient::new("http://127.0.0.1:1", "mock-model").unwrap());
+    let milvus = Arc::new(MilvusClient::new("http://127.0.0.1:1").unwrap());
 
     // Publish all 10 files
     let scan = scan_directory(dir.path(), &HashMap::new()).unwrap();
@@ -289,6 +302,8 @@ async fn test_cancel_ingestion() {
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
+        embed.clone(),
+        milvus.clone(),
         1,
         shutdown_rx,
     );

@@ -1,7 +1,9 @@
 mod api;
 mod config;
 mod db;
+mod embedding;
 mod inference;
+mod milvus;
 mod queue;
 mod scanner;
 mod search;
@@ -12,7 +14,9 @@ use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
 use config::{AppConfig, DEFAULT_WORKSPACE_ID};
+use embedding::client::EmbedClient;
 use inference::client::InferenceClient;
+use milvus::client::MilvusClient;
 use queue::stream::RedisQueue;
 use search::indexer::SearchIndexer;
 use sqlx::postgres::PgPoolOptions;
@@ -88,6 +92,21 @@ async fn main() {
     );
     let indexer = Arc::new(Mutex::new(indexer));
 
+    let embed = Arc::new(
+        EmbedClient::new(&config.embed_url, &config.embed_model)
+            .expect("Failed to build embedding client"),
+    );
+    let milvus = Arc::new(
+        MilvusClient::new(&config.milvus_url)
+            .expect("Failed to build Milvus client"),
+    );
+
+    if let Err(e) = milvus.ensure_collection().await {
+        tracing::warn!(error = %e, "failed to ensure Milvus collection — semantic search may not work");
+    } else {
+        tracing::info!("milvus doc_chunks collection ready");
+    }
+
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     let consumer_handles = queue::consumer::spawn_consumers(
@@ -95,6 +114,8 @@ async fn main() {
         inference.clone(),
         indexer.clone(),
         pg_pool.clone(),
+        embed.clone(),
+        milvus.clone(),
         config.workers,
         shutdown_rx.clone(),
     );
@@ -106,6 +127,8 @@ async fn main() {
         indexer,
         config: config.clone(),
         pg_pool,
+        embed,
+        milvus,
         shutdown: shutdown_tx,
         shutdown_docker: AtomicBool::new(false),
     });
@@ -118,6 +141,7 @@ async fn main() {
         .route("/status", get(api::status::handle_status))
         .route("/mlx-status", get(api::status::handle_mlx_status))
         .route("/search", get(api::search::handle_search))
+        .route("/search/semantic", get(api::semantic::handle_semantic_search))
         .route("/facets", get(api::tags::handle_facets))
         .route("/summary/{file}", get(api::summary::handle_summary))
         .route("/browse", get(api::browse::handle_browse))

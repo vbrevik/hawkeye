@@ -163,6 +163,31 @@ pub async fn get_summary_by_document(
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DocSummaryBrief {
+    pub id: Uuid,
+    pub source_path: String,
+    pub title: String,
+    pub tldr: String,
+}
+
+pub async fn get_doc_summaries_by_ids(
+    pool: &PgPool,
+    doc_ids: &[Uuid],
+) -> Result<Vec<DocSummaryBrief>, sqlx::Error> {
+    sqlx::query_as::<_, DocSummaryBrief>(
+        r#"
+        SELECT d.id, d.source_path, s.title, s.tldr
+        FROM documents d
+        JOIN summaries s ON s.document_id = d.id
+        WHERE d.id = ANY($1)
+        "#,
+    )
+    .bind(doc_ids)
+    .fetch_all(pool)
+    .await
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct FullSummaryRow {
     pub source_path: String,
     pub source_hash: String,
