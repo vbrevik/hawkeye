@@ -3,6 +3,7 @@
 	import { search, fetchFacets, reindex } from '$lib/api/search';
 	import { cancelJobs } from '$lib/api/ingest';
 	import { startPolling, stopPolling, queueStatus } from '$lib/stores/status';
+	import { startHealthPolling, stopHealthPolling, healthSummary } from '$lib/stores/health';
 	import { connectEvents, disconnectEvents } from '$lib/features/events/useEvents';
 	import { addToast } from '$lib/stores/toast';
 
@@ -11,6 +12,7 @@
 	import FileBrowser from '$lib/features/browse/FileBrowser.svelte';
 	import InferenceBlock from '$lib/features/status/InferenceBlock.svelte';
 	import QueueStats from '$lib/features/status/QueueStats.svelte';
+	import HealthPanel from '$lib/features/status/HealthPanel.svelte';
 	import DetailPanel from '$lib/features/summary/DetailPanel.svelte';
 	import SummaryDrawer from '$lib/features/summary/SummaryDrawer.svelte';
 	import Dashboard from '$lib/features/dashboard/Dashboard.svelte';
@@ -46,6 +48,7 @@
 	let reindexTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/* Sidebar collapsible state */
+	let showHealth = $state(false);
 	let showIngest = $state(false);
 	let showQueue = $state(false);
 
@@ -165,10 +168,12 @@
 
 	$effect(() => {
 		startPolling();
+		startHealthPolling();
 		connectEvents({ onComplete: refreshFacets });
 		refreshFacets();
 		return () => {
 			stopPolling();
+			stopHealthPolling();
 			disconnectEvents();
 			if (cancelTimer) clearTimeout(cancelTimer);
 			if (reindexTimer) clearTimeout(reindexTimer);
@@ -208,6 +213,38 @@
 				Graph
 			</a>
 		</nav>
+
+		<div class="sidebar-divider"></div>
+
+		<!-- Infrastructure: collapsible -->
+		<button class="collapse-toggle" onclick={() => showHealth = !showHealth}>
+			<span class="collapse-label">
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+				</svg>
+				Health
+			</span>
+			<span class="collapse-right">
+				{#if $healthSummary.total > 0}
+					<span
+						class="health-badge"
+						class:all-up={$healthSummary.worst === 'up'}
+						class:has-degraded={$healthSummary.worst === 'degraded'}
+						class:has-down={$healthSummary.worst === 'down'}
+					>{$healthSummary.up}/{$healthSummary.total}</span>
+				{/if}
+				<span class="toggle-chevron" class:open={showHealth}>
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="6 9 12 15 18 9"/>
+					</svg>
+				</span>
+			</span>
+		</button>
+		{#if showHealth}
+			<div class="collapsible-body">
+				<HealthPanel />
+			</div>
+		{/if}
 
 		<div class="sidebar-divider"></div>
 
@@ -442,6 +479,22 @@
 		font-size: 10px; font-weight: 700; color: var(--accent-hover);
 		background: var(--accent-dim); border-radius: 99px;
 		padding: 1px 6px; font-family: var(--mono);
+		animation: pulse 2.5s ease-in-out infinite;
+	}
+	.health-badge {
+		font-size: 10px; font-weight: 700; border-radius: 99px;
+		padding: 1px 6px; font-family: var(--mono);
+		transition: background 0.3s, color 0.3s;
+	}
+	.health-badge.all-up {
+		color: var(--green); background: rgba(52, 211, 153, 0.1);
+	}
+	.health-badge.has-degraded {
+		color: var(--yellow); background: rgba(251, 191, 36, 0.1);
+		animation: pulse 2.5s ease-in-out infinite;
+	}
+	.health-badge.has-down {
+		color: var(--red); background: rgba(248, 113, 113, 0.1);
 		animation: pulse 2.5s ease-in-out infinite;
 	}
 
