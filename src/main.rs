@@ -44,6 +44,7 @@ async fn main() {
         .route("/facets", get(api::tags::handle_facets))
         .route("/summary/{file}", get(api::summary::handle_summary))
         .route("/browse", get(api::browse::handle_browse))
+        .route("/health", get(api::health::handle_health))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", config.port);
