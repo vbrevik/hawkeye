@@ -27,7 +27,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 
 ### Feature modules (`src/features/`)
 
-- `features/ingest/handler.rs` — `POST /ingest` (scan + queue) and `POST /cancel` (discard queued jobs)
+- `features/ingest/handler.rs` — `POST /ingest` (scan + queue, optional `limit` param) and `POST /cancel` (discard queued jobs)
 - `features/ingest/scanner.rs` — Filesystem `.md` file discovery with SHA-256 hashing
 - `features/ingest/worker.rs` — Process single file (LLM → Postgres → Tantivy → embeddings → Milvus)
 - `features/queue/stream.rs` — RedisQueue (XADD, XREADGROUP, XACK, cancel, status)
