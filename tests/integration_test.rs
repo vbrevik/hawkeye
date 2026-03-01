@@ -4,6 +4,7 @@ use axum::{routing::{get, post}, Json, Router};
 use clap::Parser;
 use hawkeye::{
     features::browse::handler::handle_browse,
+    features::graph::handler::{handle_entity_graph, handle_document_graph},
     features::ingest::scanner::scan_directory,
     features::queue::{
         consumer::spawn_consumers,
@@ -127,6 +128,7 @@ async fn test_full_pipeline() {
         pg_pool.clone(),
         embed.clone(),
         milvus.clone(),
+        None,
         2,
         shutdown_rx,
     );
@@ -223,6 +225,7 @@ async fn test_skip_logic_on_rerun() {
         pg_pool.clone(),
         embed.clone(),
         milvus.clone(),
+        None,
         2,
         shutdown_rx,
     );
@@ -318,6 +321,7 @@ async fn test_cancel_ingestion() {
         pg_pool.clone(),
         embed.clone(),
         milvus.clone(),
+        None,
         1,
         shutdown_rx,
     );
@@ -371,6 +375,7 @@ async fn create_test_app_state(
         pg_pool,
         embed,
         milvus,
+        neo4j: None,
         shutdown: shutdown_tx,
         shutdown_docker: AtomicBool::new(false),
     });
@@ -720,6 +725,39 @@ async fn test_status_handler() {
 
     // Cleanup
     queue.cleanup().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_graph_handler_without_neo4j() {
+    let index_dir = tempfile::tempdir().unwrap();
+    let indexer = Arc::new(Mutex::new(
+        SearchIndexer::new_in_dir(index_dir.path()).unwrap(),
+    ));
+    let (state, _pg) = create_test_app_state(indexer).await;
+
+    // state.neo4j is None — handlers should return 500 "Knowledge graph not available"
+    let app = Router::new()
+        .route("/graph/entity/{name}", get(handle_entity_graph))
+        .route("/graph/document/{id}", get(handle_document_graph))
+        .with_state(state);
+
+    let (status, body) = get_request(app.clone(), "/graph/entity/TestEntity").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let text = String::from_utf8(body).unwrap();
+    assert!(
+        text.contains("Knowledge graph not available"),
+        "Expected 'Knowledge graph not available' error, got: {}",
+        text
+    );
+
+    let (status, body) = get_request(app.clone(), "/graph/document/some-doc-id").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let text = String::from_utf8(body).unwrap();
+    assert!(
+        text.contains("Knowledge graph not available"),
+        "Expected 'Knowledge graph not available' error, got: {}",
+        text
+    );
 }
 
 #[tokio::test]

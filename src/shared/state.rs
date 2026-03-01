@@ -1,3 +1,4 @@
+use crate::features::graph::Neo4jClient;
 use crate::features::search::indexer::SearchIndexer;
 use crate::features::semantic::EmbedClient;
 use crate::features::semantic::MilvusClient;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub pg_pool: PgPool,
     pub embed: Arc<EmbedClient>,
     pub milvus: Arc<MilvusClient>,
+    pub neo4j: Option<Arc<Neo4jClient>>,
     pub shutdown: watch::Sender<bool>,
     pub shutdown_docker: AtomicBool,
 }

@@ -3,6 +3,7 @@
 	import { search, fetchFacets } from '$lib/api/search';
 	import { cancelJobs } from '$lib/api/ingest';
 	import { startPolling, stopPolling } from '$lib/stores/status';
+	import { connectEvents, disconnectEvents } from '$lib/features/events/useEvents';
 	import { addToast } from '$lib/stores/toast';
 
 	import SearchBar from '$lib/features/search/SearchBar.svelte';
@@ -120,9 +121,11 @@
 
 	$effect(() => {
 		startPolling();
+		connectEvents({ onComplete: refreshFacets });
 		refreshFacets();
 		return () => {
 			stopPolling();
+			disconnectEvents();
 			if (cancelTimer) clearTimeout(cancelTimer);
 		};
 	});
@@ -147,6 +150,13 @@
 			<div class="section-label"><span class="section-label-icon">⚡</span> Inference</div>
 			<InferenceBlock />
 		</div>
+
+		<div class="sidebar-divider"></div>
+
+		<a href="/graph" class="nav-link">
+			<span class="nav-link-icon">🕸️</span> Knowledge Graph
+			<span class="nav-link-arrow">→</span>
+		</a>
 
 		<div class="sidebar-divider"></div>
 
@@ -324,6 +334,22 @@
 	.section-label-icon { font-size: 11px; opacity: 0.7; }
 
 	.sidebar-divider { height: 1px; background: var(--border-subtle); margin: 2px 0; }
+
+	.nav-link {
+		display: flex; align-items: center; gap: 8px;
+		padding: 8px 10px; border-radius: var(--r-sm);
+		background: var(--surface-2); border: 1px solid var(--border);
+		color: var(--text-2); font-size: 12px; font-weight: 600;
+		text-decoration: none; transition: all 0.15s;
+		cursor: pointer;
+	}
+	.nav-link:hover {
+		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.3);
+		color: var(--accent-hover); text-decoration: none;
+	}
+	.nav-link-icon { font-size: 13px; }
+	.nav-link-arrow { margin-left: auto; font-size: 11px; opacity: 0.4; transition: opacity 0.15s; }
+	.nav-link:hover .nav-link-arrow { opacity: 0.8; }
 
 	/* ── Buttons ── */
 	.btn--ghost {

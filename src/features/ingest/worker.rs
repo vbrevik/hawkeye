@@ -1,3 +1,4 @@
+use crate::features::graph::neo4j::{self, Neo4jClient};
 use crate::features::ingest::scanner::ScannedFile;
 use crate::features::search::indexer::SearchIndexer;
 use crate::features::semantic::embed_client::EmbedClient;
@@ -19,6 +20,7 @@ pub async fn process_file(
     pool: &PgPool,
     embed: &EmbedClient,
     milvus: &MilvusClient,
+    neo4j: Option<&Neo4jClient>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let content = tokio::fs::read_to_string(&file.path).await?;
     let filename = file
@@ -72,6 +74,26 @@ pub async fn process_file(
                     })?;
 
                 tracing::info!(file = %file.path.display(), "summarized");
+
+                // Write knowledge graph to Neo4j (non-critical — log errors, don't fail ingest)
+                if let Some(neo4j_client) = neo4j {
+                    let rel_tuples = neo4j::build_relationship_tuples(&summary.relationships);
+                    match neo4j_client
+                        .write_document_graph(
+                            &doc.id.to_string(),
+                            &summary.title,
+                            &source_path,
+                            &summary.entities,
+                            &summary.tags,
+                            &summary.topics,
+                            &rel_tuples,
+                        )
+                        .await
+                    {
+                        Ok(()) => tracing::info!(file = %file.path.display(), "graph written to neo4j"),
+                        Err(e) => tracing::warn!(file = %file.path.display(), error = %e, "neo4j write failed"),
+                    }
+                }
 
                 // Embed and store vectors (non-critical — log errors, don't fail ingest)
                 let ws_id = DEFAULT_WORKSPACE_ID.to_string();

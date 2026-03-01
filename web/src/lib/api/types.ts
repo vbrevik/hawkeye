@@ -1,3 +1,22 @@
+export interface GraphNode {
+	id: string;
+	label: string;
+	type: 'entity' | 'document' | 'tag' | 'topic';
+	source_path?: string;
+}
+
+export interface GraphEdge {
+	source: string;
+	target: string;
+	label: string;
+	context?: string;
+}
+
+export interface GraphResponse {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface SearchResult {
 	file: string;
 	title: string;
@@ -93,4 +112,15 @@ export interface HealthResponse {
 
 export interface ShutdownResponse {
 	message: string;
+}
+
+export interface DocumentDoneEvent {
+	type: 'document_done';
+	file: string;
+}
+
+export interface DocumentFailedEvent {
+	type: 'document_failed';
+	file: string;
+	error: string;
 }

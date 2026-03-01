@@ -52,9 +52,21 @@ pub struct AppConfig {
     #[arg(long, default_value = "http://localhost:19530")]
     pub milvus_url: String,
 
-    /// Neo4j HTTP URL
+    /// Neo4j HTTP URL (health checks)
     #[arg(long, default_value = "http://localhost:7475")]
     pub neo4j_url: String,
+
+    /// Neo4j Bolt URL (graph operations)
+    #[arg(long, default_value = "bolt://localhost:7688")]
+    pub neo4j_bolt_url: String,
+
+    /// Neo4j username
+    #[arg(long, default_value = "neo4j")]
+    pub neo4j_user: String,
+
+    /// Neo4j password
+    #[arg(long, default_value = "hawkeye")]
+    pub neo4j_password: String,
 
     /// Embedding sidecar URL (infinity-emb serving bge-m3)
     #[arg(long, default_value = "http://localhost:7703")]
@@ -79,6 +91,9 @@ mod tests {
         assert_eq!(cfg.minio_url, "http://localhost:9000");
         assert_eq!(cfg.milvus_url, "http://localhost:19530");
         assert_eq!(cfg.neo4j_url, "http://localhost:7475");
+        assert_eq!(cfg.neo4j_bolt_url, "bolt://localhost:7688");
+        assert_eq!(cfg.neo4j_user, "neo4j");
+        assert_eq!(cfg.neo4j_password, "hawkeye");
         assert_eq!(cfg.embed_url, "http://localhost:7703");
         assert_eq!(cfg.embed_model, "BAAI/bge-m3");
     }

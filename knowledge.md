@@ -2,7 +2,7 @@
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon.
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon.
 
 ## Quickstart
 
@@ -41,11 +41,15 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `features/summary/handler.rs` — `GET /summary/{file}` single file summary from Postgres
 - `features/summary/types.rs` — `Summary`, `Relationship`, `RelationType` structs
 - `features/browse/handler.rs` — `GET /browse` filesystem directory listing with md_file_count
+- `features/graph/neo4j.rs` — Neo4jClient (connect, write_document_graph, query_entity 2-hop, query_document, ensure_indexes)
+- `features/graph/handler.rs` — `GET /graph/entity/{name}` entity graph traversal, `GET /graph/document/{id}` document graph
+- `features/events/handler.rs` — `GET /events` SSE stream for real-time ingest progress
+- `features/events/publisher.rs` — `DocumentEvent` pub/sub for worker → SSE bridge
 
 ### Shared modules (`src/shared/`)
 
 - `shared/config.rs` — CLI args via `clap::Parser` (AppConfig), `DEFAULT_WORKSPACE_ID`
-- `shared/state.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, embed, milvus, shutdown)
+- `shared/state.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, embed, milvus, neo4j, shutdown)
 - `shared/db/documents.rs` — Postgres CRUD (documents, summaries, relationships) via sqlx
 - `shared/inference/client.rs` — MLX sidecar HTTP client (summarization LLM calls)
 - `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
@@ -71,7 +75,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `migrations/` — sqlx Postgres migrations (run automatically on startup)
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
-**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus → search API → SvelteKit frontend
+**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus + Neo4j knowledge graph → search API / graph API → SvelteKit frontend
 
 ### Frontend (`web/`)
 
@@ -80,7 +84,9 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `web/src/routes/+layout.svelte` — App shell (CSS import, ToastContainer)
 - `web/src/lib/api/` — TypeScript API client modules (search, browse, ingest, summary, status, health, shutdown)
 - `web/src/lib/api/types.ts` — Shared TypeScript types matching Rust API shapes
-- `web/src/lib/features/` — Feature components (search/SearchBar, search/ResultCard, browse/FileBrowser, facets/FacetCloud, status/InferenceBlock, status/QueueStats, summary/DetailPanel, summary/SummaryDrawer)
+- `web/src/lib/features/` — Feature components (search/SearchBar, search/ResultCard, browse/FileBrowser, facets/FacetCloud, status/InferenceBlock, status/QueueStats, summary/DetailPanel, summary/SummaryDrawer, graph/GraphCanvas, events/useEvents)
+- `web/src/lib/api/graph.ts` — TypeScript client for `/graph/entity/:name` and `/graph/document/:id`
+- `web/src/routes/graph/+page.svelte` — Knowledge graph exploration page with interactive force-directed Canvas visualization
 - `web/src/lib/stores/` — Svelte stores (status polling, toast notifications)
 - `web/src/lib/components/` — Shared components (ToastContainer)
 - `web/src/app.css` — Global dark theme CSS (design system variables)
@@ -100,6 +106,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Clippy with `-D warnings` (treat warnings as errors)
 - No global package installs; use `cargo` for Rust deps
 - Docker ports intentionally offset from defaults (Postgres 5433, Neo4j 7475/7688) to avoid conflicts
+- Neo4j Bolt URL defaults to `bolt://localhost:7688`, user `neo4j`, password `hawkeye` (dev-only defaults matching docker-compose)
 - Python scripts use `uv run` with inline `# /// script` dependency declarations — no virtualenv needed
 
 ## Gotchas
@@ -113,6 +120,10 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - The Tantivy index dir (`.hawkeye_index`) is gitignored — it's created automatically on first run
 - `static/` directory (SvelteKit build output) is gitignored — rebuild with `cd web && npm run build`
 - `web/node_modules` and `web/.svelte-kit` are gitignored
+- Neo4j is **optional** (`neo4j: Option<Arc<Neo4jClient>>` in AppState) — if Neo4j is unreachable on startup, graph features are disabled but everything else works. Graph API handlers return 500 "Knowledge graph not available" when disabled
+- Neo4j writes happen **after** Postgres in the worker pipeline and are non-critical — failures are logged but don't fail the ingest
+- Neo4j stores entities, tags, topics as nodes, with MENTIONS/HAS_TAG/ABOUT edges from Document nodes, plus RELATED_TO edges between entities (from LLM-extracted relationships)
+- `query_entity` does a 2-hop graph traversal (up to 200 edges) to show connected entities, documents, tags, and topics
 - Integration tests require **both** Docker Postgres (5433) **and** Redis (6379) running — `docker compose up -d`
 - Integration tests use `Uuid::new_v4()` workspace IDs for Redis key isolation between parallel tests
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running

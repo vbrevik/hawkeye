@@ -1,8 +1,11 @@
+use crate::features::graph::Neo4jClient;
+use crate::features::events::{publish_document_event, DocumentEvent};
 use crate::features::ingest::worker;
 use crate::features::queue::stream::RedisQueue;
 use crate::features::search::indexer::SearchIndexer;
 use crate::features::semantic::embed_client::EmbedClient;
 use crate::features::semantic::milvus::MilvusClient;
+use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use crate::shared::inference::client::InferenceClient;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -17,6 +20,7 @@ pub fn spawn_consumers(
     pool: PgPool,
     embed: Arc<EmbedClient>,
     milvus: Arc<MilvusClient>,
+    neo4j: Option<Arc<Neo4jClient>>,
     count: usize,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Vec<JoinHandle<()>> {
@@ -28,11 +32,12 @@ pub fn spawn_consumers(
             let p = pool.clone();
             let e = embed.clone();
             let m = milvus.clone();
+            let n = neo4j.clone();
             let rx = shutdown_rx.clone();
             let name = format!("worker-{}", i);
 
             tokio::spawn(async move {
-                consumer_loop(&q, &c, &idx, &p, &e, &m, &name, rx).await;
+                consumer_loop(&q, &c, &idx, &p, &e, &m, n.as_deref(), &name, rx).await;
             })
         })
         .collect()
@@ -46,6 +51,7 @@ async fn consumer_loop(
     pool: &PgPool,
     embed: &EmbedClient,
     milvus: &MilvusClient,
+    neo4j: Option<&Neo4jClient>,
     consumer_name: &str,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
@@ -59,10 +65,17 @@ async fn consumer_loop(
                 match result {
                     Ok(Some((msg_id, file))) => {
                         let file_path = file.path.display().to_string();
-                        match worker::process_file(&file, client, indexer, pool, embed, milvus).await {
+                        match worker::process_file(&file, client, indexer, pool, embed, milvus, neo4j).await {
                             Ok(()) => {
                                 if let Err(e) = queue.ack_completed(&msg_id).await {
                                     tracing::error!(error = %e, "failed to ack completed");
+                                }
+                                if let Err(e) = publish_document_event(
+                                    queue.redis_pool(),
+                                    DEFAULT_WORKSPACE_ID,
+                                    &DocumentEvent::Done { file: file_path.clone() },
+                                ).await {
+                                    tracing::warn!(error = %e, "failed to publish SSE event");
                                 }
                             }
                             Err(e) => {
@@ -71,6 +84,16 @@ async fn consumer_loop(
                                     queue.ack_failed(&msg_id, &file_path, &e.to_string()).await
                                 {
                                     tracing::error!(error = %ae, "failed to ack failed");
+                                }
+                                if let Err(pe) = publish_document_event(
+                                    queue.redis_pool(),
+                                    DEFAULT_WORKSPACE_ID,
+                                    &DocumentEvent::Failed {
+                                        file: file_path.clone(),
+                                        error: e.to_string(),
+                                    },
+                                ).await {
+                                    tracing::warn!(error = %pe, "failed to publish SSE event");
                                 }
                             }
                         }

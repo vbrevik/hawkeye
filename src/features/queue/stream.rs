@@ -41,6 +41,10 @@ pub struct RedisQueue {
 }
 
 impl RedisQueue {
+    pub fn redis_pool(&self) -> &Pool {
+        &self.pool
+    }
+
     pub fn new(pool: Pool, workspace_id: Uuid) -> Self {
         let ws = workspace_id.to_string();
         Self {

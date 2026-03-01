@@ -7,6 +7,7 @@ use axum::Router;
 use tower_http::services::{ServeDir, ServeFile};
 use clap::Parser;
 use shared::config::{AppConfig, DEFAULT_WORKSPACE_ID};
+use features::graph::Neo4jClient;
 use features::semantic::EmbedClient;
 use shared::inference::client::InferenceClient;
 use features::semantic::MilvusClient;
@@ -100,6 +101,27 @@ async fn main() {
         tracing::info!("milvus doc_chunks collection ready");
     }
 
+    let neo4j = match Neo4jClient::new(
+        &config.neo4j_bolt_url,
+        &config.neo4j_user,
+        &config.neo4j_password,
+    )
+    .await
+    {
+        Ok(client) => {
+            if let Err(e) = client.ensure_indexes().await {
+                tracing::warn!(error = %e, "failed to create Neo4j indexes");
+            } else {
+                tracing::info!("neo4j indexes ready");
+            }
+            Some(Arc::new(client))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "neo4j not available — knowledge graph disabled");
+            None
+        }
+    };
+
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     let consumer_handles = features::queue::consumer::spawn_consumers(
@@ -109,6 +131,7 @@ async fn main() {
         pg_pool.clone(),
         embed.clone(),
         milvus.clone(),
+        neo4j.clone(),
         config.workers,
         shutdown_rx.clone(),
     );
@@ -122,6 +145,7 @@ async fn main() {
         pg_pool,
         embed,
         milvus,
+        neo4j,
         shutdown: shutdown_tx,
         shutdown_docker: AtomicBool::new(false),
     });
@@ -137,7 +161,10 @@ async fn main() {
         .route("/facets", get(features::search::facets::handle_facets))
         .route("/summary/{file}", get(features::summary::handler::handle_summary))
         .route("/browse", get(features::browse::handler::handle_browse))
+        .route("/graph/entity/{name}", get(features::graph::handler::handle_entity_graph))
+        .route("/graph/document/{id}", get(features::graph::handler::handle_document_graph))
         .route("/health", get(shared::health::handle_health))
+        .route("/events", get(features::events::handler::handle_events))
         .with_state(state.clone())
         .fallback_service(
             ServeDir::new("static").fallback(ServeFile::new("static/index.html")),
