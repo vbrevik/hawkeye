@@ -11,6 +11,7 @@ use crate::config::AppConfig;
 use crate::inference::client::InferenceClient;
 use crate::queue::manager::QueueManager;
 use crate::search::indexer::SearchIndexer;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -19,4 +20,6 @@ pub struct AppState {
     pub queue: QueueManager,
     pub inference: Arc<InferenceClient>,
     pub indexer: Arc<Mutex<SearchIndexer>>,
+    #[allow(dead_code)]
+    pub pg_pool: PgPool,
 }

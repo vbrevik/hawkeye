@@ -14,6 +14,7 @@ use config::AppConfig;
 use inference::client::InferenceClient;
 use queue::manager::QueueManager;
 use search::indexer::SearchIndexer;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -25,6 +26,19 @@ async fn main() {
 
     let config = AppConfig::parse();
 
+    let pg_pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&config.postgres_url)
+        .await
+        .expect("Failed to connect to Postgres");
+
+    sqlx::migrate!()
+        .run(&pg_pool)
+        .await
+        .expect("Failed to run database migrations");
+
+    tracing::info!("database migrations applied");
+
     let indexer = SearchIndexer::new_in_dir(std::path::Path::new(&config.index_path))
         .expect("Failed to create search index");
 
@@ -33,6 +47,7 @@ async fn main() {
         queue: QueueManager::new(config.workers),
         indexer: Arc::new(Mutex::new(indexer)),
         config: config.clone(),
+        pg_pool,
     });
 
     let app = Router::new()

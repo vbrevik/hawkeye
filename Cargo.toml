@@ -20,6 +20,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 glob = "0.3"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "uuid"] }
+uuid = { version = "1.21.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3"
