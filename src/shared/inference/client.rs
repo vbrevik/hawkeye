@@ -75,7 +75,7 @@ pub struct InferenceClient {
 impl InferenceClient {
     pub fn new(base_url: &str, model: &str, temperature: f32) -> Result<Self, reqwest::Error> {
         let client = Client::builder()
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_secs(300))
             .build()?;
 
         Ok(Self {
@@ -125,7 +125,7 @@ impl InferenceClient {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: 16384,
+            max_tokens: 4096,
         };
 
         let start = Instant::now();

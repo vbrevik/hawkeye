@@ -2,7 +2,7 @@
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon. Default LLM: `mlx-community/Qwen3.5-35B-A3B-4bit`.
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon. Default LLM: `mlx-community/Qwen3.5-35B-A3B-4bit`. Currently running: `InferenceIllusionist/gpt-oss-20b-MLX-4bit` (~13GB RAM, 4-bit quantised).
 
 ## Quickstart
 
@@ -85,21 +85,58 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 ### Frontend (`web/`)
 
 - `web/` — SvelteKit SPA (adapter-static → `static/` dir served by Axum via tower-http ServeDir)
-- `web/src/routes/+page.svelte` — Main app page (three-column layout: sidebar, results, detail panel)
-- `web/src/routes/+layout.svelte` — App shell (CSS import, ToastContainer)
-- `web/src/lib/api/client.ts` — Shared `apiFetch<T>()` wrapper with `ApiError` class, centralized `res.ok` check, auth header hook for Task 10
-- `web/src/lib/api/` — TypeScript API client modules (search, browse, ingest, summary, status, health, shutdown, graph) — all use `apiFetch`
-- `web/src/lib/api/types.ts` — Shared TypeScript types matching Rust API shapes (includes `FileError` for queue errors)
-- `web/src/lib/features/` — Feature components (search/SearchBar, search/ResultCard, browse/FileBrowser, facets/FacetCloud, status/InferenceBlock, status/QueueStats, summary/DetailPanel, summary/SummaryDrawer, graph/GraphCanvas, events/useEvents)
-- `web/src/lib/api/graph.ts` — TypeScript client for `/graph/entity/:name` and `/graph/document/:id`
-- `web/src/routes/graph/+page.svelte` — Knowledge graph exploration page with interactive force-directed Canvas visualization
-- `web/src/lib/stores/` — Svelte stores (status polling, toast notifications)
-- `web/src/lib/components/` — Shared components (ToastContainer)
 - `web/src/app.css` — Global dark theme CSS (design system variables)
 - `web/svelte.config.js` — adapter-static outputs to `../static/`
 - `web/vite.config.ts` — Vite proxy → localhost:7700 for dev mode
 - Build: `cd web && npm run build` → outputs to `static/`
 - Dev: `cd web && npm run dev` (port 5173, proxies API to :7700)
+
+#### Routes
+
+- `web/src/routes/+page.svelte` — Main app page (three-column layout: sidebar, results, detail panel)
+- `web/src/routes/+layout.svelte` — App shell (CSS import, ToastContainer)
+- `web/src/routes/+layout.ts` — SvelteKit layout config (SSR disabled for static adapter)
+- `web/src/routes/graph/+page.svelte` — Knowledge graph exploration page with interactive force-directed Canvas visualization
+- `web/src/routes/settings/+page.svelte` — Settings page (workspace creation, API key management)
+
+#### API clients (`web/src/lib/api/`)
+
+- `client.ts` — Shared `apiFetch<T>()` wrapper with `ApiError` class, centralized `res.ok` check, auth header hook
+- `types.ts` — Shared TypeScript types matching Rust API shapes (includes `FileError` for queue errors)
+- `search.ts`, `browse.ts`, `ingest.ts`, `summary.ts`, `status.ts`, `health.ts`, `shutdown.ts`, `graph.ts`, `workspaces.ts` — Per-endpoint API client modules, all use `apiFetch`
+
+#### Feature components (`web/src/lib/features/`)
+
+- `search/SearchBar.svelte` — Full-text search input
+- `search/ResultCard.svelte` — Search result display card
+- `browse/FileBrowser.svelte` — Filesystem directory listing
+- `facets/FacetCloud.svelte` — Tag/topic/entity frequency cloud
+- `facets/FacetExplorer.svelte` — Expanded facet exploration panel
+- `summary/DetailPanel.svelte` — Document summary detail view
+- `summary/SummaryDrawer.svelte` — Slide-out summary drawer
+- `sidebar/Sidebar.svelte` — App sidebar (navigation, actions, queue stats)
+- `dashboard/Dashboard.svelte` — Landing dashboard view
+- `dashboard/Onboarding.svelte` — First-run onboarding flow
+- `dashboard/StatsRow.svelte` — Summary statistics row
+- `status/QueueStats.svelte` — Queue progress display
+- `status/InferenceBlock.svelte` — MLX sidecar status indicator
+- `status/HealthPanel.svelte` — Service health overview panel
+- `status/SystemHealthCard.svelte` — Individual service health card
+- `graph/GraphCanvas.svelte` — Interactive force-directed knowledge graph visualization (Canvas)
+- `events/useEvents.ts` — SSE event stream hook for real-time ingest updates
+- `settings/CreateWorkspace.svelte` — Workspace creation form
+- `settings/GenerateApiKey.svelte` — API key generation step
+- `settings/WorkspaceDocs.svelte` — Workspace document listing
+
+#### Stores (`web/src/lib/stores/`)
+
+- `status.ts` — Queue status polling store
+- `health.ts` — Service health polling store
+- `toast.ts` — Toast notification store
+
+#### Shared components (`web/src/lib/components/`)
+
+- `ToastContainer.svelte` — Global toast notification container
 
 ## Conventions
 
@@ -137,6 +174,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
 - Default model: `mlx-community/Qwen3.5-35B-A3B-4bit` (~20GB RAM, MoE with 3B active params) — override with: `./scripts/start_mlx.sh <model-id>`
+- Currently active model: `InferenceIllusionist/gpt-oss-20b-MLX-4bit` (~13GB RAM, 4-bit quantised GPT-OSS 20B). Uses channel tokens — output wraps reasoning in `<|channel|>analysis<|message|>...` and final JSON in `<|channel|>final<|message|>{json}`. The `extract_json_content()` function in the inference client handles this automatically
+- Default workers: **1** (single consumer) — the MLX sidecar can only process ~1 request at a time; concurrent requests cause timeouts
 - `EmbedClient` chunks text into ~512-token overlapping windows (2048 chars, 50% overlap) before embedding — max chunk size is approximate (1 token ≈ 4 chars)
 - Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
@@ -156,14 +195,15 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
 - Inference client checks HTTP status before parsing JSON — non-2xx responses produce clear "MLX sidecar returned {status}: {body}" errors instead of confusing serde failures
+- Inference client HTTP timeout is **300 seconds** (5 minutes) to accommodate gpt-oss-20b's slow generation times (~40-120s/file)
 - Worker retries use exponential backoff (1s → 2s) between attempts, not instant retries
-- `max_tokens: 2048` is set on LLM requests to prevent unbounded response generation (1024 was too low — caused ~40% JSON truncation failures)
+- `max_tokens: 4096` is set on LLM requests to prevent unbounded response generation (1024 was too low — caused ~40% JSON truncation failures; 2048 was insufficient for gpt-oss-20b's channel-token reasoning + JSON; 16384 caused 10-30min/file generation times)
 - Content larger than 100KB is truncated before sending to the LLM, with a warning log
 - `/no_think` prefix is conditionally prepended to the system prompt only when the model name contains "qwen3" (case-insensitive) — benign on other models but unnecessary
 - `temperature` is configurable via `--temperature` CLI flag (default 0.1)
 - Inference latency is logged as `elapsed_ms` via `tracing::info!` after each successful LLM call
 - vllm-mlx sidecar supports continuous batching (`--continuous-batching` flag) — main advantage over mlx-lm at high concurrency
-- **Recommended config:** mlx-lm sidecar + 4 workers — simplest setup with best throughput
+- **Recommended config:** mlx-lm sidecar + 1 worker for gpt-oss-20b (single-request throughput ~40-120s/file); increase workers only with models that handle concurrency (e.g. vllm-mlx with continuous batching)
 - Benchmark results (Qwen2.5-7B-4bit, Apple Silicon):
 
   | Config | mlx-lm | vllm-mlx | Winner |
