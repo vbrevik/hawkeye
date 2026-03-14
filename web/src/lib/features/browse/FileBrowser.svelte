@@ -89,12 +89,14 @@
 <style>
 	.browser-wrap { display: flex; flex-direction: column; gap: 6px; }
 	.browser-crumb {
-		font-size: 11px; color: var(--text-2); font-family: var(--mono);
+		font-size: 10px; color: var(--text-3); font-family: var(--mono);
 		word-break: break-all; line-height: 1.4; min-height: 14px;
+		padding: 4px 6px; background: var(--bg); border-radius: var(--r-sm);
+		border: 1px solid var(--border-subtle);
 	}
 	.browser-list {
 		max-height: 180px; overflow-y: auto;
-		border: 1px solid var(--border); border-radius: var(--r-sm);
+		border: 1px solid var(--border-subtle); border-radius: var(--r-sm);
 		background: var(--bg);
 	}
 	.browser-row {
@@ -106,13 +108,16 @@
 		font-family: var(--font);
 	}
 	.browser-row:hover { background: var(--accent-dim); color: var(--text); }
-	.browser-row.parent { color: var(--text-3); font-style: italic; }
+	.browser-row.parent { color: var(--text-3); }
 	.browser-row.parent:hover { color: var(--text-2); }
 	.browser-icon { opacity: 0.5; flex-shrink: 0; font-size: 13px; }
 	.browser-empty {
 		padding: 12px 10px; font-size: 12px; color: var(--text-3); text-align: center;
 	}
-	.browser-md-count { font-size: 11px; color: var(--text-2); min-height: 16px; font-weight: 500; }
+	.browser-md-count {
+		font-size: 11px; color: var(--accent-hover); min-height: 16px; font-weight: 500;
+		font-family: var(--mono); letter-spacing: -0.02em;
+	}
 	.browser-md-count.none { color: var(--text-3); font-weight: 400; }
 
 	.btn {
@@ -121,7 +126,7 @@
 		cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
 		letter-spacing: 0.01em;
 	}
-	.btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3); }
+	.btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2); }
 	.btn:active { transform: translateY(0); }
 	.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
 </style>

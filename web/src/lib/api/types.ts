@@ -27,6 +27,36 @@ export interface SearchResult {
 	score: number;
 }
 
+export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
+
+export interface HybridResult {
+	file: string;
+	title: string;
+	tldr: string;
+	tags: string;
+	entities: string;
+	topics: string;
+	hybrid_score: number;
+	keyword_rank: number | null;
+	semantic_rank: number | null;
+	keyword_score: number | null;
+	semantic_distance: number | null;
+}
+
+export interface DisplayResult {
+	file: string;
+	title: string;
+	tldr: string;
+	tags: string;
+	entities: string;
+	topics: string;
+	score: number;
+	keyword_rank?: number | null;
+	semantic_rank?: number | null;
+	keyword_score?: number | null;
+	semantic_distance?: number | null;
+}
+
 export interface SemanticResult {
 	doc_id: string;
 	source_path: string;
@@ -41,6 +71,7 @@ export interface FacetEntry {
 }
 
 export interface Facets {
+	document_count: number;
 	tags: FacetEntry[];
 	topics: FacetEntry[];
 	entities: FacetEntry[];
@@ -66,9 +97,9 @@ export interface CancelResult {
 }
 
 export interface Relationship {
-	from_entity: string;
-	to_entity: string;
-	relation_type: string;
+	from: string;
+	rel: string;
+	to: string;
 	context: string;
 }
 

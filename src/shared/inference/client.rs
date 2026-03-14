@@ -31,6 +31,7 @@ struct ChatRequest {
     messages: Vec<Message>,
     temperature: f32,
     max_tokens: u32,
+    repetition_penalty: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +48,8 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct Choice {
     message: ResponseMessage,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,7 +128,8 @@ impl InferenceClient {
                 },
             ],
             temperature: self.temperature,
-            max_tokens: 4096,
+            max_tokens: 16384,
+            repetition_penalty: 1.1,
         };
 
         let start = Instant::now();
@@ -144,8 +148,19 @@ impl InferenceClient {
         }
 
         let chat_response: ChatResponse = response.json().await?;
-        let raw_content = &chat_response.choices[0].message.content;
+        let choice = &chat_response.choices[0];
+        let raw_content = &choice.message.content;
+        let finish_reason = choice.finish_reason.as_deref().unwrap_or("unknown");
         let cleaned = extract_json_content(raw_content);
+
+        if !cleaned.starts_with('{') {
+            return Err(format!(
+                "LLM output truncated (finish_reason={}, {} chars, no JSON found)",
+                finish_reason,
+                raw_content.len()
+            )
+            .into());
+        }
 
         let output: LlmOutput = serde_json::from_str(cleaned)?;
 
@@ -416,6 +431,37 @@ mod tests {
         assert_eq!(summary.entities, vec!["Keycloak"]);
         assert_eq!(summary.relationships.len(), 1);
         assert_eq!(summary.relationships[0].from, "Keycloak");
+    }
+
+    async fn mock_chat_truncated() -> Json<serde_json::Value> {
+        Json(json!({
+            "choices": [{
+                "message": {
+                    "content": "<|channel|>analysis<|message|>But we can use fearless-concurrency. But we can use fearless-concurrency. But we can use fearless-concurrency."
+                },
+                "finish_reason": "length"
+            }]
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_summarize_returns_error_on_truncated_output() {
+        let app = Router::new().route("/v1/chat/completions", post(mock_chat_truncated));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = InferenceClient::new(&format!("http://{}", addr), "mock-model", 0.1).unwrap();
+        let result = client
+            .summarize("notes.md", "Some content", "sha256:abc")
+            .await;
+
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("truncated"), "error should mention truncation: {msg}");
+        assert!(msg.contains("no JSON found"), "error should mention no JSON: {msg}");
     }
 
     #[tokio::test]

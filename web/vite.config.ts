@@ -6,7 +6,7 @@ const API_TARGET = 'http://localhost:7700';
 const proxyPaths = [
 	'/ingest', '/cancel', '/shutdown', '/status', '/mlx-status',
 	'/search', '/facets', '/summary', '/browse', '/health', '/events',
-	'/workspaces', '/api-keys', '/graph'
+	'/workspaces', '/api-keys', '/graph', '/reindex'
 ];
 
 const proxy: Record<string, string> = {};

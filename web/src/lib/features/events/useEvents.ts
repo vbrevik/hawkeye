@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { queueStatus } from '$lib/stores/status';
 import { addToast } from '$lib/stores/toast';
-import type { DocumentDoneEvent, DocumentFailedEvent } from '$lib/api/types';
+import type { DocumentFailedEvent } from '$lib/api/types';
 
 let eventSource: EventSource | null = null;
 let onCompleteCallback: (() => void) | null = null;
@@ -12,9 +12,7 @@ export function connectEvents(options: { onComplete?: () => void } = {}) {
 	onCompleteCallback = options.onComplete ?? null;
 	eventSource = new EventSource('/events');
 
-	eventSource.addEventListener('document_done', (e: MessageEvent) => {
-		const data: DocumentDoneEvent = JSON.parse(e.data);
-
+	eventSource.addEventListener('document_done', (_e: MessageEvent) => {
 		queueStatus.update((s) => ({
 			...s,
 			completed: s.completed + 1,

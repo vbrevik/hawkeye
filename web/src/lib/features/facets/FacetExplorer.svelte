@@ -1,17 +1,21 @@
 <script lang="ts">
-	import type { Facets } from '$lib/api/types';
+	import type { Facets, SearchMode } from '$lib/api/types';
 
 	let {
 		facets,
 		activeFilters = [],
+		searchMode = 'hybrid' as SearchMode,
 		onaddfilter,
 		onremovefilter
 	}: {
 		facets: Facets;
 		activeFilters: string[];
+		searchMode?: SearchMode;
 		onaddfilter: (name: string) => void;
 		onremovefilter: (name: string) => void;
 	} = $props();
+
+	const filtersPaused = $derived(searchMode === 'semantic' && activeFilters.length > 0);
 
 	let expanded = $state(false);
 	const hasAnyFacets = $derived(
@@ -29,7 +33,7 @@
 {#if hasAnyFacets || activeFilters.length > 0}
 	<div class="facet-explorer">
 		{#if activeFilters.length > 0}
-			<div class="active-filters-bar">
+			<div class="active-filters-bar" class:paused={filtersPaused}>
 				<span class="filter-label">Filters</span>
 				{#each activeFilters as filter}
 					<button class="filter-pill" onclick={() => onremovefilter(filter)}>
@@ -40,6 +44,9 @@
 						</svg>
 					</button>
 				{/each}
+				{#if filtersPaused}
+					<span class="paused-notice">not applied in semantic mode</span>
+				{/if}
 				<button class="clear-all" onclick={() => { for (const f of [...activeFilters]) onremovefilter(f); }}>
 					Clear all
 				</button>
@@ -114,8 +121,17 @@
 	/* Active Filters Bar */
 	.active-filters-bar {
 		display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-		background: var(--accent-dim); border: 1px solid rgba(99, 102, 241, 0.15);
+		background: var(--accent-dim); border: 1px solid rgba(16, 185, 129, 0.15);
 		border-radius: var(--r-sm); padding: 6px 12px;
+		transition: opacity 0.25s, border-color 0.25s;
+	}
+	.active-filters-bar.paused {
+		opacity: 0.5;
+		border-style: dashed;
+	}
+	.paused-notice {
+		font-size: 10px; color: var(--mode-semantic);
+		margin-left: auto; white-space: nowrap;
 	}
 	.filter-label {
 		font-size: 10px; font-weight: 700; text-transform: uppercase;
@@ -123,13 +139,13 @@
 	}
 	.filter-pill {
 		display: inline-flex; align-items: center; gap: 4px;
-		background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.25);
-		border-radius: 4px; color: var(--accent-hover); font-size: 11px;
+		background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25);
+		border-radius: var(--r-sm); color: var(--accent-hover); font-size: 11px;
 		font-weight: 500; padding: 2px 8px; cursor: pointer;
 		transition: background var(--duration-fast), transform 0.1s;
 		font-family: var(--font);
 	}
-	.filter-pill:hover { background: rgba(99, 102, 241, 0.25); transform: scale(1.02); }
+	.filter-pill:hover { background: rgba(16, 185, 129, 0.22); }
 	.pill-x { opacity: 0.5; }
 	.filter-pill:hover .pill-x { opacity: 1; }
 	.clear-all {
@@ -148,7 +164,7 @@
 	}
 	.strip-label {
 		font-size: 9px; font-weight: 700; text-transform: uppercase;
-		letter-spacing: 0.06em; padding: 3px 7px; border-radius: 3px;
+		letter-spacing: 0.06em; padding: 3px 7px; border-radius: var(--r-sm);
 		flex-shrink: 0; margin-top: 1px;
 	}
 	.tag-accent { background: var(--tag-bg); color: var(--tag-text); }
@@ -158,18 +174,18 @@
 	.strip-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 	.strip-chip {
 		display: inline-flex; align-items: center; gap: 3px;
-		border-radius: 4px; font-size: 11px; padding: 2px 8px;
+		border-radius: var(--r-sm); font-size: 11px; padding: 2px 8px;
 		cursor: pointer; font-weight: 500; border: 1px solid;
 		font-family: var(--font);
 		transition: transform 0.1s, background var(--duration-fast);
 	}
-	.strip-chip:hover { transform: scale(1.03); }
-	.strip-chip:active { transform: scale(0.97); }
+	.strip-chip:hover { background-blend-mode: multiply; }
+	.strip-chip:active { transform: scale(0.98); }
 	.count { opacity: 0.45; font-size: 9px; font-weight: 400; }
 
 	.tag-chip { background: var(--tag-bg); border-color: var(--tag-border); color: var(--tag-text); }
-	.tag-chip:hover { background: rgba(99, 102, 241, 0.18); }
-	.tag-chip.active { background: rgba(99, 102, 241, 0.22); border-color: rgba(99, 102, 241, 0.4); }
+	.tag-chip:hover { background: rgba(165, 180, 252, 0.15); }
+	.tag-chip.active { background: rgba(165, 180, 252, 0.18); border-color: rgba(165, 180, 252, 0.35); }
 
 	.topic-chip { background: var(--topic-bg); border-color: var(--topic-border); color: var(--topic-text); }
 	.topic-chip:hover { background: rgba(56, 189, 248, 0.15); }

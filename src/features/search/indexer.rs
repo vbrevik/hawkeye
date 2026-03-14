@@ -149,6 +149,16 @@ impl SearchIndexer {
         Ok(sorted)
     }
 
+    pub fn num_docs(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        let reader = self
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
+            .try_into()?;
+        let searcher = reader.searcher();
+        Ok(searcher.num_docs() as usize)
+    }
+
     pub fn top_tags(&self, limit: usize) -> Result<Vec<(String, usize)>, Box<dyn std::error::Error>> {
         self.top_values_for_field(self.tags, limit)
     }

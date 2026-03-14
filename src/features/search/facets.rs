@@ -12,6 +12,7 @@ pub struct FacetEntry {
 
 #[derive(Debug, Serialize)]
 pub struct Facets {
+    pub document_count: usize,
     pub tags: Vec<FacetEntry>,
     pub topics: Vec<FacetEntry>,
     pub entities: Vec<FacetEntry>,
@@ -35,7 +36,9 @@ pub async fn handle_facets(State(state): State<Arc<AppState>>) -> Json<Facets> {
         tracing::error!(error = %e, "failed to read top entities");
         vec![]
     });
+    let document_count = indexer.num_docs().unwrap_or(0);
     Json(Facets {
+        document_count,
         tags: to_entries(tags),
         topics: to_entries(topics),
         entities: to_entries(entities),
@@ -45,10 +48,12 @@ pub async fn handle_facets(State(state): State<Arc<AppState>>) -> Json<Facets> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::queue::QueueManager;
     use crate::features::search::SearchIndexer;
     use crate::features::semantic::{EmbedClient, MilvusClient};
     use crate::features::summary::Summary;
     use crate::shared::config::AppConfig;
+    use crate::shared::inference::client::InferenceClient;
     use axum::body::Body;
     use axum::http::Request;
     use axum::routing::get;
@@ -111,11 +116,13 @@ mod tests {
     #[test]
     fn test_facets_json_empty() {
         let facets = Facets {
+            document_count: 0,
             tags: vec![],
             topics: vec![],
             entities: vec![],
         };
         let json = serde_json::to_value(&facets).unwrap();
+        assert_eq!(json["document_count"], 0);
         assert!(json["tags"].as_array().unwrap().is_empty());
         assert!(json["topics"].as_array().unwrap().is_empty());
         assert!(json["entities"].as_array().unwrap().is_empty());
@@ -124,6 +131,7 @@ mod tests {
     #[test]
     fn test_facets_json_populated() {
         let facets = Facets {
+            document_count: 3,
             tags: vec![
                 FacetEntry { name: "auth".to_string(), count: 5 },
                 FacetEntry { name: "rust".to_string(), count: 3 },
@@ -172,6 +180,8 @@ mod tests {
             .unwrap();
         let embed = Arc::new(EmbedClient::new("http://127.0.0.1:1", "mock").unwrap());
         let milvus = Arc::new(MilvusClient::new("http://127.0.0.1:1").unwrap());
+        let inference = Arc::new(InferenceClient::new("http://127.0.0.1:1", "mock", 0.1).unwrap());
+        let queue = Arc::new(QueueManager::new(1));
         let (shutdown_tx, _) = watch::channel(false);
 
         Arc::new(AppState {
@@ -182,6 +192,8 @@ mod tests {
             embed,
             milvus,
             neo4j: None,
+            inference,
+            queue,
             shutdown: shutdown_tx,
             shutdown_docker: AtomicBool::new(false),
         })
@@ -204,6 +216,7 @@ mod tests {
 
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["document_count"], 0);
         assert!(json["tags"].as_array().unwrap().is_empty());
         assert!(json["topics"].as_array().unwrap().is_empty());
         assert!(json["entities"].as_array().unwrap().is_empty());
@@ -255,6 +268,8 @@ mod tests {
 
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["document_count"], 3);
 
         let tags = json["tags"].as_array().unwrap();
         assert!(!tags.is_empty());

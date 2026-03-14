@@ -36,26 +36,28 @@
 		border-radius: var(--r-sm); padding: 10px 8px; text-align: center;
 		transition: border-color 0.2s, background 0.2s;
 	}
-	.stat-cell:hover { border-color: var(--text-3); }
+	.stat-cell:hover { border-color: var(--border); background: rgba(16, 185, 129, 0.03); }
 	.val {
-		font-size: 20px; font-weight: 800; color: var(--text);
-		line-height: 1; margin-bottom: 2px; letter-spacing: -0.03em;
+		font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--text);
+		line-height: 1; margin-bottom: 2px;
 	}
 	.lbl {
 		font-size: 9px; color: var(--text-3); text-transform: uppercase;
 		letter-spacing: 0.08em; font-weight: 500;
 	}
 	.prog .val { color: var(--accent); }
-	.prog.active { border-color: rgba(99, 102, 241, 0.2); }
+	.prog.active {
+		border-color: rgba(16, 185, 129, 0.25);
+	}
 	.fail .val { color: var(--red); }
 	.fail { border-color: rgba(248, 113, 113, 0.15); }
 
 	.progress-bar {
-		background: var(--surface-2); border-radius: 4px; height: 4px;
+		background: var(--surface-2); border-radius: 2px; height: 3px;
 		overflow: hidden; margin-top: 8px;
 	}
 	.progress-fill {
-		height: 100%; border-radius: 4px;
+		height: 100%; border-radius: 2px;
 		background: linear-gradient(90deg, var(--accent), var(--accent-hover), var(--accent));
 		background-size: 200% 100%;
 		animation: progress-shimmer 2s ease infinite;

@@ -1,39 +1,50 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-	--bg: #08080a;
-	--surface: #141418;
-	--surface-2: #1c1c22;
-	--border: #2a2a35;
-	--border-subtle: #1e1e28;
-	--text: #f0f0f5;
-	--text-2: #9d9db5;
-	--text-3: #55556a;
-	--accent: #6366f1;
-	--accent-dim: rgba(99, 102, 241, 0.10);
-	--accent-hover: #818cf8;
-	--accent-glow: rgba(99, 102, 241, 0.18);
-	--gradient-accent: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+	--bg: #09090c;
+	--surface: #121216;
+	--surface-2: #1a1a20;
+	--border: #28283a;
+	--border-subtle: #1c1c28;
+	--text: #ededf2;
+	--text-2: #9e9eb8;
+	--text-3: #585870;
+	--accent: #10b981;
+	--accent-dim: rgba(16, 185, 129, 0.08);
+	--accent-hover: #34d399;
+	--accent-glow: rgba(16, 185, 129, 0.15);
+	--gradient-accent: linear-gradient(135deg, #10b981 0%, #059669 100%);
 	--green: #34d399;
 	--yellow: #fbbf24;
 	--red: #f87171;
-	--font: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--font: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 	--mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Fira Code', monospace;
-	--r: 10px;
-	--r-sm: 6px;
+	--r: 3px;
+	--r-sm: 2px;
 	--sidebar-w: 200px;
 	--drawer-w: 360px;
 
 	/* Facet semantic colors */
-	--tag-bg: rgba(99, 102, 241, 0.10);
-	--tag-border: rgba(99, 102, 241, 0.20);
-	--tag-text: #818cf8;
+	--tag-bg: rgba(165, 180, 252, 0.08);
+	--tag-border: rgba(165, 180, 252, 0.18);
+	--tag-text: #a5b4fc;
 	--topic-bg: rgba(56, 189, 248, 0.08);
 	--topic-border: rgba(56, 189, 248, 0.18);
 	--topic-text: #7dd3fc;
 	--entity-bg: rgba(251, 191, 36, 0.08);
 	--entity-border: rgba(251, 191, 36, 0.18);
 	--entity-text: #fcd34d;
+
+	/* Search mode colors */
+	--mode-keyword: #22d3ee;
+	--mode-keyword-bg: rgba(34, 211, 238, 0.08);
+	--mode-keyword-border: rgba(34, 211, 238, 0.20);
+	--mode-semantic: #e879f9;
+	--mode-semantic-bg: rgba(232, 121, 249, 0.08);
+	--mode-semantic-border: rgba(232, 121, 249, 0.20);
+	--mode-hybrid: #10b981;
+	--mode-hybrid-bg: rgba(16, 185, 129, 0.08);
+	--mode-hybrid-border: rgba(16, 185, 129, 0.20);
 
 	/* Spacing scale */
 	--sp-1: 4px;
@@ -45,9 +56,10 @@
 	--sp-8: 32px;
 
 	/* Transitions */
-	--ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-	--duration-fast: 150ms;
-	--duration-normal: 200ms;
+	--ease-out: cubic-bezier(0.2, 0, 0, 1);
+	--ease-spring: cubic-bezier(0.2, 0, 0, 1);
+	--duration-fast: 100ms;
+	--duration-normal: 150ms;
 }
 
 body {
@@ -60,9 +72,25 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 100;
+	background:
+		repeating-linear-gradient(
+			0deg,
+			transparent,
+			transparent 2px,
+			rgba(200, 220, 255, 0.015) 2px,
+			rgba(200, 220, 255, 0.015) 3px
+		);
+}
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
 a { color: var(--accent-hover); text-decoration: none; }
@@ -72,7 +100,7 @@ button { font-family: var(--font); }
 input { font-family: var(--font); }
 
 @keyframes fadeInUp {
-	from { opacity: 0; transform: translateY(6px); }
+	from { opacity: 0; transform: translateY(4px); }
 	to { opacity: 1; transform: translateY(0); }
 }
 
@@ -92,7 +120,7 @@ input { font-family: var(--font); }
 }
 
 @keyframes scaleIn {
-	from { opacity: 0; transform: scale(0.95); }
+	from { opacity: 0; transform: scale(0.97); }
 	to { opacity: 1; transform: scale(1); }
 }
 

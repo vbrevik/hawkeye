@@ -1,4 +1,3 @@
-pub mod consumer;
-pub mod stream;
+pub mod manager;
 
-pub use stream::RedisQueue;
+pub use manager::QueueManager;

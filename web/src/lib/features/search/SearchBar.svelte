@@ -33,8 +33,8 @@
 		class="search-input"
 		bind:this={inputEl}
 		bind:value
-		placeholder="Search summaries..."
-		aria-label="Search summaries"
+		placeholder="Search your knowledge…"
+		aria-label="Search your knowledge"
 		autocomplete="off"
 		spellcheck="false"
 		{onkeydown}
@@ -55,31 +55,32 @@
 	.search-bar {
 		display: flex; align-items: center; gap: 12px;
 		background: var(--surface); border: 1px solid var(--border);
-		border-radius: 14px; padding: 12px 18px;
-		transition: border-color 0.2s, box-shadow 0.3s, background 0.2s;
+		border-radius: var(--r); padding: 12px 16px;
+		transition: border-color 0.25s, box-shadow 0.4s, background 0.25s;
 	}
 	.search-bar:focus-within {
 		border-color: var(--accent);
-		box-shadow: 0 0 0 3px var(--accent-dim), 0 8px 32px rgba(99, 102, 241, 0.12);
+		box-shadow: 0 0 0 2px var(--accent-dim);
 		background: var(--surface-2);
 	}
-	.search-icon { color: var(--text-3); font-size: 16px; flex-shrink: 0; transition: color 0.2s; }
+	.search-icon { color: var(--text-3); flex-shrink: 0; transition: color 0.25s; }
 	.search-bar:focus-within .search-icon { color: var(--accent); }
 	.search-input {
 		flex: 1; background: none; border: none; color: var(--text);
 		font-size: 16px; font-weight: 400; outline: none;
+		letter-spacing: -0.01em;
 	}
 	.search-input::placeholder { color: var(--text-3); font-weight: 400; }
 	.search-clear {
 		background: none; border: none; color: var(--text-3); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
-		padding: 4px; border-radius: 4px; flex-shrink: 0;
+		padding: 4px;		border-radius: var(--r-sm); flex-shrink: 0;
 		transition: color var(--duration-fast), background var(--duration-fast);
 	}
 	.search-clear:hover { color: var(--text); background: var(--surface-2); }
 	.search-kbd {
 		background: var(--surface-2); border: 1px solid var(--border);
-		border-radius: 5px; color: var(--text-3); font-size: 10px;
+		border-radius: var(--r-sm); color: var(--text-3); font-size: 10px;
 		font-family: var(--mono); padding: 3px 7px; flex-shrink: 0;
 		font-weight: 500; letter-spacing: 0.02em;
 	}

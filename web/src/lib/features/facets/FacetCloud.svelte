@@ -30,23 +30,22 @@
 
 <style>
 	.filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-	.no-filters { font-size: 11px; color: var(--text-3); font-style: italic; }
+	.no-filters { font-size: 11px; color: var(--text-3); }
 
 	.chip {
 		display: inline-flex; align-items: center; gap: 3px;
-		border-radius: 4px; font-size: 11px; padding: 2px 8px;
-		cursor: pointer; transition: transform 0.1s, background 0.15s;
+		border-radius: var(--r-sm); font-size: 11px; padding: 2px 8px;
+		cursor: pointer; transition: background 0.1s;
 		font-weight: 500; border: 1px solid; font-family: var(--font);
 	}
-	.chip:hover { transform: scale(1.03); }
-	.chip:active { transform: scale(0.97); }
+	.chip:active { transform: scale(0.98); }
 	.count { opacity: 0.5; font-size: 9px; font-weight: 400; }
 
 	.chip--tag {
-		background: var(--accent-dim); border-color: rgba(99, 102, 241, 0.2);
-		color: var(--accent-hover);
+		background: var(--tag-bg); border-color: var(--tag-border);
+		color: var(--tag-text);
 	}
-	.chip--tag:hover { background: rgba(99, 102, 241, 0.2); }
+	.chip--tag:hover { background: rgba(165, 180, 252, 0.15); }
 
 	.chip--topic {
 		background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.18);

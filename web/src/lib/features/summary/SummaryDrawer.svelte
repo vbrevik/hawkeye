@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SearchResult, Summary } from '$lib/api/types';
+	import type { DisplayResult, Summary } from '$lib/api/types';
 	import { fetchSummary } from '$lib/api/summary';
 
 	let {
@@ -8,7 +8,7 @@
 		onclose,
 		ontagclick
 	}: {
-		result: SearchResult | null;
+		result: DisplayResult | null;
 		open: boolean;
 		onclose: () => void;
 		ontagclick: (tag: string) => void;
@@ -162,7 +162,7 @@
 	.drawer-text { font-size: 13px; color: var(--text-2); line-height: 1.7; }
 	.drawer-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 	.drawer-chip {
-		background: var(--surface-2); border-radius: 4px; color: var(--text-2);
+		background: var(--surface-2); border-radius: var(--r-sm); color: var(--text-2);
 		font-size: 12px; padding: 3px 8px; cursor: pointer;
 		transition: background 0.15s, color 0.15s; border: none; font-family: var(--font);
 	}

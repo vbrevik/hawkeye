@@ -2,7 +2,7 @@
 
 Local AI-powered markdown summarizer. Point it at a directory of `.md` files → get TL;DR summaries, structured metadata, and full-text search. Summaries are stored in Postgres.
 
-**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon. Default LLM: `mlx-community/Qwen3.5-35B-A3B-4bit`. Currently running: `InferenceIllusionist/gpt-oss-20b-MLX-4bit` (~13GB RAM, 4-bit quantised).
+**Stack:** Rust (Axum 0.8, Tantivy 0.25, sqlx 0.8, deadpool-redis 0.18, neo4rs 0.8, Tokio) + Python sidecars (mlx-lm for LLM inference, infinity-emb for embeddings) — optimised for Apple Silicon. Default LLM: `mlx-community/Qwen3.5-35B-A3B-4bit` (Qwen3 MoE, ~20GB RAM, 4-bit quantised).
 
 ## Quickstart
 
@@ -30,8 +30,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `features/ingest/handler.rs` — `POST /ingest` (scan + queue, optional `limit` param) and `POST /cancel` (discard queued jobs)
 - `features/ingest/scanner.rs` — Filesystem `.md` file discovery with SHA-256 hashing
 - `features/ingest/worker.rs` — Process single file (LLM → Postgres → Tantivy → embeddings → Milvus)
-- `features/queue/stream.rs` — RedisQueue (XADD, XREADGROUP, XACK, cancel, status)
-- `features/queue/consumer.rs` — spawn_consumers(), consumer loop with graceful shutdown
+- `features/queue/manager.rs` — In-memory QueueManager with tokio Semaphore-based concurrency, cancel support, and status tracking
 - `features/search/handler.rs` — `GET /search` full-text search via Tantivy, `POST /reindex` rebuild Tantivy index from Postgres
 - `features/search/indexer.rs` — Tantivy full-text index read/write (`clear_all`, `index_summaries` batch, `index_summary` single)
 - `features/search/facets.rs` — `GET /facets` tag/topic/entity frequency counts
@@ -53,7 +52,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 ### Shared modules (`src/shared/`)
 
 - `shared/config.rs` — CLI args via `clap::Parser` (AppConfig), `DEFAULT_WORKSPACE_ID`
-- `shared/state.rs` — `AppState` struct (config, redis_pool, indexer, pg_pool, embed, milvus, neo4j, shutdown)
+- `shared/state.rs` — `AppState` struct (config, redis_pool, inference, queue, indexer, pg_pool, embed, milvus, neo4j, shutdown)
 - `shared/db/documents.rs` — Postgres CRUD (documents, summaries, relationships) via sqlx
 - `shared/inference/client.rs` — MLX sidecar HTTP client (summarization LLM calls)
 - `shared/health.rs` — `GET /health` per-service TCP/HTTP health checks with latency
@@ -80,7 +79,7 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - `migrations/` — sqlx Postgres migrations (run automatically on startup)
 - `docker-compose.yml` — Dev infra (Redis 6379, Postgres 5433, etcd 2379, MinIO 9000, Milvus 19530/9091, Neo4j 7475/7688)
 
-**Data flow:** `.md` files → Redis Stream (XADD) → consumer workers (XREADGROUP) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus + Neo4j knowledge graph → Redis pub/sub (document events) → SSE `/events` → SvelteKit frontend (live updates)
+**Data flow:** `.md` files → in-memory semaphore queue (4 concurrent workers) → mlx-lm sidecar → Postgres (documents + summaries + relationships) + Tantivy index + embeddings → Milvus + Neo4j knowledge graph → Redis pub/sub (document events) → SSE `/events` → SvelteKit frontend (live updates)
 
 ### Frontend (`web/`)
 
@@ -146,8 +145,8 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Feature-based module layout: `src/features/` for domain logic, `src/shared/` for cross-cutting concerns
 - Auth: Bearer token with `hke_` prefix, SHA-256 hashed in DB. Bootstrap endpoints (`POST /workspaces`, `POST /api-keys`) are unauthenticated; protected endpoints use `require_auth` middleware layer. Public endpoints (`/search`, `/ingest`, `/status`, `/browse`) remain unauthenticated
 - SHA-256 content hashing to skip unchanged files on re-ingest (hashes checked against Postgres, not filesystem)
-- Redis Streams for durable job queue — consumer group `hawkeye-workers`, stream key `hawkeye:jobs:{workspace_id}`
-- Redis pub/sub for real-time SSE events — channel `hawkeye:events:{workspace_id}`, published after ack_completed/ack_failed
+- In-memory semaphore queue (tokio `Semaphore`) for job processing — no Redis Streams, no consumer groups. Queue state (total/completed/failed/in_progress) is held in `Arc<Mutex<QueueState>>` inside `QueueManager`
+- Redis pub/sub for real-time SSE events — channel `hawkeye:events:{workspace_id}`, published after document processing completes/fails
 - Clippy with `-D warnings` (treat warnings as errors)
 - No global package installs; use `cargo` for Rust deps
 - Docker ports intentionally offset from defaults (Postgres 5433, Neo4j 7475/7688) to avoid conflicts
@@ -169,15 +168,15 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Neo4j writes happen **after** Postgres in the worker pipeline and are non-critical — failures are logged but don't fail the ingest
 - Neo4j stores entities, tags, topics as nodes, with MENTIONS/HAS_TAG/ABOUT edges from Document nodes, plus RELATED_TO edges between entities (from LLM-extracted relationships)
 - `query_entity` does a 2-hop graph traversal (up to 200 edges) to show connected entities, documents, tags, and topics
-- Integration tests require **both** Docker Postgres (5433) **and** Redis (6379) running — `docker compose up -d`
-- Integration tests use `Uuid::new_v4()` workspace IDs for Redis key isolation between parallel tests
+- Integration tests require Docker Postgres (5433) running — `docker compose up -d`. Redis (6379) is needed only for SSE event tests
+- Integration tests use `Uuid::new_v4()` workspace IDs for isolation between parallel tests
 - When running `cargo test`, the test config uses its own defaults — some tests may hit localhost:7701 MLX which won't be running
 - `clap` defaults in `AppConfig` apply only when the binary is run without args — in tests you often need to set them explicitly
-- Default model: `mlx-community/Qwen3.5-35B-A3B-4bit` (~20GB RAM, MoE with 3B active params) — override with: `./scripts/start_mlx.sh <model-id>`
-- Currently active model: `InferenceIllusionist/gpt-oss-20b-MLX-4bit` (~13GB RAM, 4-bit quantised GPT-OSS 20B). Uses channel tokens — output wraps reasoning in `<|channel|>analysis<|message|>...` and final JSON in `<|channel|>final<|message|>{json}`. The `extract_json_content()` function in the inference client handles this automatically
-- Default workers: **1** (single consumer) — the MLX sidecar can only process ~1 request at a time; concurrent requests cause timeouts
+- Default model: `mlx-community/Qwen3.5-35B-A3B-4bit` (~20GB RAM, Qwen3 MoE with 3B active params) — override with: `./scripts/start_mlx.sh <model-id>`
+- Channel token extraction: some models (e.g. gpt-oss-20b) wrap output in `<|channel|>analysis<|message|>...` and final JSON in `<|channel|>final<|message|>{json}`. The `extract_json_content()` function in the inference client handles this automatically and is a no-op for models that output JSON directly
+- Default workers: **4** (in-memory semaphore concurrency) — GPU inference is the bottleneck, but multiple workers keep the pipeline saturated
 - `EmbedClient` chunks text into ~512-token overlapping windows (2048 chars, 50% overlap) before embedding — max chunk size is approximate (1 token ≈ 4 chars)
-- Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal consumers via `watch` channel → wait 3s for consumer cleanup → abort remaining → exit
+- Graceful shutdown: server handles SIGINT (Ctrl+C), SIGTERM (`kill`), and `POST /shutdown` — all trigger the same path: stop accepting requests → wait for in-flight responses → signal workers via `watch` channel → wait 3s for worker cleanup → abort remaining → exit
 - `POST /shutdown` triggers graceful server shutdown; `POST /shutdown?docker=true` also runs `docker compose down` after the server stops
 - `POST /cancel` vs `POST /shutdown`: cancel discards **queued jobs** but keeps the server running; shutdown stops the **entire server process**
 - API key format: `hke_` + 32 alphanumeric chars (e.g. `hke_a1b2c3...`). Key is shown once on creation, stored as SHA-256 hash in `api_keys` table. Use `setAuthToken()` in the frontend to persist in browser
@@ -189,21 +188,21 @@ Organized into **feature-based modules** (`src/features/`) and **shared infrastr
 - Running server holds Tantivy index lock — use `POST /shutdown` or `kill` (SIGTERM) instead of `kill -9` to release it cleanly
 - LLM prompt extracts relationships in the same call as summaries — `LlmOutput.relationships` uses `#[serde(default)]` so missing field defaults to `[]`
 - `RelationType` enum uses `#[serde(other)]` on `Other` variant to handle unknown relationship types from the LLM gracefully
-- Redis consumer group is created idempotently on startup (`BUSYGROUP` error is swallowed) — no manual setup needed
-- `POST /cancel` clears unprocessed jobs from the Redis Stream, adjusts counters so `in_progress` becomes 0, and recreates the consumer group for future ingests — in-flight jobs still finish but won't affect status
-- Queue status (`GET /status`) is derived from Redis counters (`hawkeye:stats:{ws}:total/completed/failed`), not in-memory state
+- Queue is purely in-memory — no Redis consumer groups, no stream keys. Each `POST /ingest` spawns a background task that processes files through the `QueueManager`
+- `POST /cancel` sets an `AtomicBool` flag checked by workers before processing — already-in-flight jobs finish but queued jobs are skipped. Returns count of cancelled/completed/failed
+- Queue status (`GET /status`) is derived from in-memory `QueueState` (total/completed/failed/in_progress/errors)
 - `sqlx::migrate!()` must be called **without arguments** (defaults to `$CARGO_MANIFEST_DIR/migrations`). Passing `"migrations"` as a string fails with "paths relative to the current file's directory are not currently supported"
 - Pre-written code in plan docs drifts fast (ports, config, API shapes). Use **prompt contracts** (GOAL/CONSTRAINTS/FAILURE CONDITIONS) in `docs/BACKLOG.md` instead — they stay valid because they describe *what* to build, not *how*. Historical design docs live in `docs/archive/`
 - Inference client checks HTTP status before parsing JSON — non-2xx responses produce clear "MLX sidecar returned {status}: {body}" errors instead of confusing serde failures
-- Inference client HTTP timeout is **300 seconds** (5 minutes) to accommodate gpt-oss-20b's slow generation times (~40-120s/file)
+- Inference client HTTP timeout is **300 seconds** (5 minutes) to accommodate slow LLM generation on large documents
 - Worker retries use exponential backoff (1s → 2s) between attempts, not instant retries
-- `max_tokens: 4096` is set on LLM requests to prevent unbounded response generation (1024 was too low — caused ~40% JSON truncation failures; 2048 was insufficient for gpt-oss-20b's channel-token reasoning + JSON; 16384 caused 10-30min/file generation times)
+- `max_tokens: 16384` is set on LLM requests — large enough for Qwen3's extended reasoning + structured JSON output
 - Content larger than 100KB is truncated before sending to the LLM, with a warning log
 - `/no_think` prefix is conditionally prepended to the system prompt only when the model name contains "qwen3" (case-insensitive) — benign on other models but unnecessary
 - `temperature` is configurable via `--temperature` CLI flag (default 0.1)
 - Inference latency is logged as `elapsed_ms` via `tracing::info!` after each successful LLM call
 - vllm-mlx sidecar supports continuous batching (`--continuous-batching` flag) — main advantage over mlx-lm at high concurrency
-- **Recommended config:** mlx-lm sidecar + 1 worker for gpt-oss-20b (single-request throughput ~40-120s/file); increase workers only with models that handle concurrency (e.g. vllm-mlx with continuous batching)
+- **Recommended config:** mlx-lm sidecar + 4 workers for Qwen3 (GPU-bound inference, multiple workers keep the pipeline saturated). Adjust `--workers` based on model throughput and available RAM
 - Benchmark results (Qwen2.5-7B-4bit, Apple Silicon):
 
   | Config | mlx-lm | vllm-mlx | Winner |

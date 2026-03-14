@@ -1,5 +1,5 @@
 use crate::features::ingest::scanner::scan_directory;
-use crate::features::queue::stream::{CancelResult, RedisQueue};
+use crate::features::queue::manager::CancelResult;
 use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use crate::shared::db::documents::get_source_hashes;
 use crate::shared::error::AppError;
@@ -51,11 +51,29 @@ pub async fn handle_ingest(
     let queued = scan_result.to_process.len();
     let skipped = scan_result.skipped;
 
-    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
-    queue
-        .publish_files(&scan_result.to_process)
-        .await
-        .map_err(AppError::internal)?;
+    let queue = state.queue.clone();
+    let inference = state.inference.clone();
+    let indexer = state.indexer.clone();
+    let pool = state.pg_pool.clone();
+    let embed = state.embed.clone();
+    let milvus = state.milvus.clone();
+    let neo4j = state.neo4j.clone();
+    let redis_pool = state.redis_pool.clone();
+
+    tokio::spawn(async move {
+        queue
+            .process_files(
+                scan_result.to_process,
+                inference,
+                indexer,
+                pool,
+                embed,
+                milvus,
+                neo4j,
+                redis_pool,
+            )
+            .await;
+    });
 
     tracing::info!(path = %req.path, queued, skipped, "ingest started");
 
@@ -69,11 +87,7 @@ pub async fn handle_ingest(
 pub async fn handle_cancel(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CancelResult>, AppError> {
-    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
-    let result = queue
-        .cancel()
-        .await
-        .map_err(AppError::internal)?;
+    let result = state.queue.cancel().await;
 
     tracing::info!(
         cancelled = result.cancelled,

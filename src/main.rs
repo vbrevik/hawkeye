@@ -6,12 +6,12 @@ use axum::routing::{delete, get, post};
 use axum::{middleware, Router};
 use tower_http::services::{ServeDir, ServeFile};
 use clap::Parser;
-use shared::config::{AppConfig, DEFAULT_WORKSPACE_ID};
+use shared::config::AppConfig;
 use features::graph::Neo4jClient;
+use features::queue::QueueManager;
 use features::semantic::EmbedClient;
 use shared::inference::client::InferenceClient;
 use features::semantic::MilvusClient;
-use features::queue::RedisQueue;
 use features::search::SearchIndexer;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::atomic::AtomicBool;
@@ -69,13 +69,7 @@ async fn main() {
         .create_pool(Some(deadpool_redis::Runtime::Tokio1))
         .expect("Failed to create Redis pool");
 
-    let queue = RedisQueue::new(redis_pool.clone(), DEFAULT_WORKSPACE_ID);
-    queue
-        .ensure_group()
-        .await
-        .expect("Failed to create Redis consumer group");
-
-    tracing::info!("redis consumer group ready");
+    tracing::info!("redis pool ready (used for SSE events)");
 
     let indexer = SearchIndexer::new_in_dir(std::path::Path::new(&config.index_path))
         .expect("Failed to create search index");
@@ -122,21 +116,11 @@ async fn main() {
         }
     };
 
+    let queue = Arc::new(QueueManager::new(config.workers));
+
+    tracing::info!(workers = config.workers, "in-memory queue ready");
+
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-
-    let consumer_handles = features::queue::consumer::spawn_consumers(
-        queue,
-        inference.clone(),
-        indexer.clone(),
-        pg_pool.clone(),
-        embed.clone(),
-        milvus.clone(),
-        neo4j.clone(),
-        config.workers,
-        shutdown_rx.clone(),
-    );
-
-    tracing::info!(workers = config.workers, "consumers started");
 
     let state = Arc::new(AppState {
         redis_pool,
@@ -146,6 +130,8 @@ async fn main() {
         embed,
         milvus,
         neo4j,
+        inference,
+        queue,
         shutdown: shutdown_tx,
         shutdown_docker: AtomicBool::new(false),
     });
@@ -165,6 +151,7 @@ async fn main() {
         .route("/status", get(shared::status::handle_status))
         .route("/mlx-status", get(shared::status::handle_mlx_status))
         .route("/search", get(features::search::handler::handle_search))
+        .route("/search/hybrid", get(features::search::hybrid::handle_hybrid_search))
         .route("/reindex", post(features::search::handler::handle_reindex))
         .route("/search/semantic", get(features::semantic::handler::handle_semantic_search))
         .route("/facets", get(features::search::facets::handle_facets))
@@ -189,12 +176,6 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal(shutdown_rx))
         .await
         .expect("server exited with error");
-
-    tracing::info!("server stopped, waiting for consumers");
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-    for h in consumer_handles {
-        h.abort();
-    }
 
     if state.shutdown_docker.load(std::sync::atomic::Ordering::SeqCst) {
         tracing::info!("stopping docker containers");

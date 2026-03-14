@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SearchResult, Summary } from '$lib/api/types';
+	import type { DisplayResult, Summary } from '$lib/api/types';
 	import { fetchSummary } from '$lib/api/summary';
 
 	let {
@@ -9,10 +9,10 @@
 		onselectresult,
 		ongraphclick,
 	}: {
-		selected: SearchResult | null;
-		results?: SearchResult[];
+		selected: DisplayResult | null;
+		results?: DisplayResult[];
 		ontagclick: (tag: string) => void;
-		onselectresult: (r: SearchResult) => void;
+		onselectresult: (r: DisplayResult) => void;
 		ongraphclick: (query: string) => void;
 	} = $props();
 
@@ -38,7 +38,7 @@
 		}
 	}
 
-	function computeRelated(source: SearchResult): SearchResult[] {
+	function computeRelated(source: DisplayResult): DisplayResult[] {
 		const myTags = new Set((source.tags || '').split(' ').filter(Boolean));
 		const myEntities = new Set((source.entities || '').split(' ').filter(Boolean));
 		return results.filter((r) => {
@@ -49,7 +49,7 @@
 		}).slice(0, 5);
 	}
 
-	function sharedFacetCount(a: SearchResult, b: SearchResult): { tags: number; entities: number } {
+	function sharedFacetCount(a: DisplayResult, b: DisplayResult): { tags: number; entities: number } {
 		const aTags = new Set((a.tags || '').split(' ').filter(Boolean));
 		const aEntities = new Set((a.entities || '').split(' ').filter(Boolean));
 		const bTags = (b.tags || '').split(' ').filter(Boolean);
@@ -59,6 +59,13 @@
 			entities: bEntities.filter(e => aEntities.has(e)).length,
 		};
 	}
+
+	const hasProvenance = $derived(
+		selected && (selected.keyword_rank != null || selected.semantic_rank != null)
+	);
+	const isDualMatch = $derived(
+		selected && selected.keyword_rank != null && selected.semantic_rank != null
+	);
 
 	const related = $derived(selected ? computeRelated(selected) : []);
 	const displayData = $derived(summary ?? (selected ? {
@@ -103,6 +110,29 @@
 				</button>
 			</div>
 			<div class="detail-tldr">{displayData.tldr}</div>
+
+			{#if hasProvenance}
+				<div class="provenance-section">
+					<div class="detail-slabel">Search Provenance</div>
+					<div class="prov-badges">
+						{#if isDualMatch}
+							<span class="prov-badge prov-dual">★ Dual Match</span>
+						{/if}
+						{#if selected?.keyword_rank != null}
+							<span class="prov-badge prov-kw">Keyword #{selected.keyword_rank}</span>
+						{/if}
+						{#if selected?.semantic_rank != null}
+							<span class="prov-badge prov-sem">Semantic #{selected.semantic_rank}</span>
+						{/if}
+						{#if selected?.keyword_score != null}
+							<span class="prov-meta">KW score: {selected.keyword_score.toFixed(2)}</span>
+						{/if}
+						{#if selected?.semantic_distance != null}
+							<span class="prov-meta">SEM dist: {selected.semantic_distance.toFixed(2)}</span>
+						{/if}
+					</div>
+				</div>
+			{/if}
 
 			<div class="detail-section">
 				<div class="detail-slabel">Tags</div>
@@ -199,8 +229,8 @@
 		display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
 	}
 	.detail-title {
-		font-size: 19px; font-weight: 800; color: var(--text);
-		line-height: 1.3; letter-spacing: -0.025em;
+		font-size: 18px; font-weight: 700; color: var(--text);
+		line-height: 1.3; letter-spacing: -0.01em;
 	}
 	.view-graph-btn {
 		display: flex; align-items: center; gap: 4px;
@@ -211,7 +241,7 @@
 		transition: all var(--duration-fast);
 	}
 	.view-graph-btn:hover {
-		color: var(--accent-hover); border-color: rgba(99, 102, 241, 0.3);
+		color: var(--accent-hover); border-color: rgba(16, 185, 129, 0.3);
 		background: var(--accent-dim); text-decoration: none;
 	}
 
@@ -224,7 +254,7 @@
 	}
 	.detail-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 	.detail-chip {
-		border-radius: 5px; font-size: 12px; padding: 3px 9px;
+		border-radius: var(--r-sm); font-size: 12px; padding: 3px 9px;
 		font-weight: 500; border: none; font-family: var(--font);
 	}
 	.detail-chip.clickable {
@@ -234,7 +264,7 @@
 
 	/* Facet-colored chip variants */
 	.tag-styled { background: var(--tag-bg); color: var(--tag-text); }
-	.tag-styled:hover { background: rgba(99, 102, 241, 0.18); }
+	.tag-styled:hover { background: rgba(165, 180, 252, 0.15); }
 	.topic-styled { background: var(--topic-bg); color: var(--topic-text); }
 	.topic-styled:hover { background: rgba(56, 189, 248, 0.15); }
 	.entity-styled { background: var(--entity-bg); color: var(--entity-text); }
@@ -256,24 +286,55 @@
 	.related-list { display: flex; flex-direction: column; gap: 6px; }
 	.related-card {
 		background: var(--surface-2); border: 1px solid var(--border);
-		border-radius: 8px; padding: 12px 14px; cursor: pointer;
+		border-radius: var(--r); padding: 10px 12px; cursor: pointer;
 		transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
 		text-align: left; width: 100%; font-family: var(--font); color: var(--text);
 	}
 	.related-card:hover {
-		border-color: rgba(99, 102, 241, 0.4); transform: translateY(-1px);
+		border-color: rgba(16, 185, 129, 0.3); transform: translateY(-1px);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 	.related-title { font-size: 13px; font-weight: 600; line-height: 1.3; margin-bottom: 3px; }
 	.related-tldr {
 		font-size: 12px; color: var(--text-3);
-		display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+		display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
 		overflow: hidden; line-height: 1.5;
 	}
 	.shared-info { display: flex; gap: 6px; margin-top: 6px; }
 	.shared-badge {
-		font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500;
+		font-size: 10px; padding: 1px 6px; border-radius: var(--r-sm); font-weight: 500;
 	}
 	.shared-badge.tag-accent { background: var(--tag-bg); color: var(--tag-text); }
 	.shared-badge.entity-accent { background: var(--entity-bg); color: var(--entity-text); }
+
+	/* Provenance section */
+	.provenance-section {
+		display: flex; flex-direction: column; gap: 8px;
+		padding: 12px 14px; border-radius: var(--r-sm);
+		background: linear-gradient(135deg, var(--mode-hybrid-bg) 0%, transparent 100%);
+		border: 1px solid var(--mode-hybrid-border);
+	}
+	.prov-badges {
+		display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+	}
+	.prov-badge {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.06em; padding: 3px 9px; border-radius: var(--r-sm);
+		border: 1px solid;
+	}
+	.prov-dual {
+		color: var(--mode-hybrid); background: var(--mode-hybrid-bg);
+		border-color: var(--mode-hybrid-border);
+	}
+	.prov-kw {
+		color: var(--mode-keyword); background: var(--mode-keyword-bg);
+		border-color: var(--mode-keyword-border);
+	}
+	.prov-sem {
+		color: var(--mode-semantic); background: var(--mode-semantic-bg);
+		border-color: var(--mode-semantic-border);
+	}
+	.prov-meta {
+		font-size: 10px; color: var(--text-3); font-family: var(--mono);
+	}
 </style>

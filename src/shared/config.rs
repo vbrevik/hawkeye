@@ -25,7 +25,7 @@ pub struct AppConfig {
     pub temperature: f32,
 
     /// Number of concurrent workers
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "4")]
     pub workers: usize,
 
     /// Path to Tantivy index directory

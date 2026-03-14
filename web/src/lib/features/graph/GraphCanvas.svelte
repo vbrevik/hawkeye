@@ -35,9 +35,9 @@
 	let panStart = { x: 0, y: 0 };
 
 	const NODE_COLORS: Record<string, string> = {
-		entity: '#6366f1',
+		entity: '#94a3b8',
 		document: '#34d399',
-		tag: '#fbbf24',
+		tag: '#a5b4fc',
 		topic: '#f87171',
 	};
 
@@ -150,14 +150,14 @@
 			ctx.beginPath();
 			ctx.moveTo(src.x, src.y);
 			ctx.lineTo(tgt.x, tgt.y);
-			ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
+			ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
 			ctx.lineWidth = 1.5;
 			ctx.stroke();
 
 			// Edge label
 			const mx = (src.x + tgt.x) / 2;
 			const my = (src.y + tgt.y) / 2;
-			ctx.fillStyle = '#55556a';
+			ctx.fillStyle = '#6e6e82';
 			ctx.font = '9px "JetBrains Mono", monospace';
 			ctx.textAlign = 'center';
 			ctx.fillText(edge.label, mx, my - 4);
@@ -172,7 +172,7 @@
 			ctx.lineTo(ax - Math.cos(angle - 0.35) * 8, ay - Math.sin(angle - 0.35) * 8);
 			ctx.lineTo(ax - Math.cos(angle + 0.35) * 8, ay - Math.sin(angle + 0.35) * 8);
 			ctx.closePath();
-			ctx.fillStyle = 'rgba(99, 102, 241, 0.35)';
+			ctx.fillStyle = 'rgba(148, 163, 184, 0.30)';
 			ctx.fill();
 		}
 
@@ -207,8 +207,8 @@
 			ctx.fillText(icon, node.x, node.y);
 
 			// Label
-			ctx.fillStyle = isHovered ? '#f0f0f5' : '#9d9db5';
-			ctx.font = `${isHovered ? 'bold ' : ''}11px "Outfit", sans-serif`;
+			ctx.fillStyle = isHovered ? '#ededf2' : '#9e9eb8';
+			ctx.font = `${isHovered ? 'bold ' : ''}11px "Figtree", sans-serif`;
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'top';
 			ctx.fillText(node.label, node.x, node.y + node.radius + 6);
@@ -334,7 +334,7 @@
 
 <style>
 	canvas {
-		border-radius: var(--r);
+		border-radius: 0;
 		border: 1px solid var(--border);
 	}
 </style>

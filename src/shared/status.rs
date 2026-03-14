@@ -1,20 +1,15 @@
+use crate::features::queue::manager::QueueStatus;
 use crate::shared::error::AppError;
 use crate::shared::state::AppState;
-use crate::features::queue::stream::{QueueStatus, RedisQueue};
 use axum::extract::State;
 use axum::Json;
 use reqwest::Client;
 use serde::Serialize;
-use crate::shared::config::DEFAULT_WORKSPACE_ID;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub async fn handle_status(State(state): State<Arc<AppState>>) -> Result<Json<QueueStatus>, AppError> {
-    let queue = RedisQueue::new(state.redis_pool.clone(), DEFAULT_WORKSPACE_ID);
-    let status = queue.read_status().await.map_err(|e| {
-        tracing::error!(error = %e, "failed to read queue status");
-        AppError::internal(e)
-    })?;
+    let status = state.queue.status().await;
     Ok(Json(status))
 }
 
